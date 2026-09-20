@@ -1,0 +1,10 @@
+# Actual exported FC2 UINT8 values for dataset_index=1362.
+# Expected argmax: class 1, maximum value 171.
+91
+171
+142
+102
+80
+91
+104
+94

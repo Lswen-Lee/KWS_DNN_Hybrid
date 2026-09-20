@@ -1,0 +1,34 @@
+digraph System {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.5", label="KWS 目標架構（不是目前完成的 hierarchy）", labelloc=t, fontname="Noto Sans CJK TC", fontsize=22];
+  node [shape=box, style="rounded,filled", fillcolor="#fff1cf", color="#7b8794", fontname="Noto Sans CJK TC", fontsize=13, margin="0.16,0.12"];
+  edge [fontname="Noto Sans CJK TC", fontsize=11, color="#536477"];
+  host [label="主機 / 板級入口（待整合）\nUINT8 Mel + 模型參數\n不代算推論中間值"];
+  control [label="全網路 / Layer Scheduler（規劃）\n一次一層，選擇 PE 或 CIM\n管理 RAM ownership / 完成 / 錯誤"];
+  mem [label="兩份 Feature-map RAM（規劃）\nCHW 存放 UINT8\n分時作來源 / 目的 / Pool 輸入"];
+  params [label="參數來源 / Parameter Memory（規劃）\n整層 W、K/C、每 channel Q31"];
+  reader [label="Feature-map Reader（規劃）\nConv patch / FC replay / CHW scan\n不建立完整 im2col 矩陣"];
+  pe [label="PE Engine（待整合）\nConv1 / FC1 / FC2\nloader / RAM / group / MAC / result 已有積木"];
+  cim [label="DCIM Backend（待實作）\nConv2 / Conv3\nmapping / 交易排程 / signed 修正"];
+  chip [label="既有 DCIM Master + Chip RTL\nunsigned raw even / odd\n不是 CNN layer controller", fillcolor="#dff1e5"];
+  post [label="結果寫回（待整合）\n沿用 Requant / ReLU\n對齊 channel/y/x 與 Q31，寫回 RAM"];
+  pool [label="獨立 Pool pass（待排程）\n沿用 CHW MaxPool\n讀出完整量化 feature map 再降採樣", fillcolor="#dff1e5"];
+  arg [label="既有 Argmax\nFC2 UINT8 class 0..7 → 分類", fillcolor="#dff1e5"];
+  host -> control;
+  host -> params;
+  host -> mem [label="輸入"];
+  control -> reader [style=dashed, label="工作描述"];
+  control -> pe [style=dashed];
+  control -> cim [style=dashed];
+  mem -> reader;
+  params -> pe;
+  params -> cim;
+  reader -> pe;
+  reader -> cim;
+  cim -> chip [label="命令 / 回應", dir=both];
+  pe -> post [label="INT32 + channel"];
+  cim -> post [label="修正後 INT32"];
+  post -> mem [label="UINT8 位址寫入", constraint=false];
+  mem -> pool [label="CHW scan"];
+  pool -> mem [label="另一 RAM", constraint=false];
+  mem -> arg [label="最後 8 個值"];
+}

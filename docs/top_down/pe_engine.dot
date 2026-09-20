@@ -1,0 +1,29 @@
+digraph PE {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.55", label="PE Memory Engine：共用積木，選擇一種 PE", labelloc=t, fontname="Noto Sans CJK TC", fontsize=22];
+  node [shape=box, style="rounded,filled", fillcolor="#dff1e5", color="#7b8794", fontname="Noto Sans CJK TC", fontsize=13, margin="0.16,0.12"];
+  edge [fontname="Noto Sans CJK TC", fontsize=11, color="#536477"];
+  ext [label="共用外部契約\nload / weight / compute / replay / activation / result", fillcolor="#e4eef9"];
+  arb [label="待整合：描述保存 + 互斥\nK/C、layer-ready、done/error\n可直接放 engine，不另增大型 FSM", fillcolor="#fff1cf"];
+  loader [label="既有 Layer Weight Loader\nW[channel][k] → lane / address"];
+  ram [label="既有 Weight Buffer\n12 × 512 × 8 bits"];
+  sums [label="PE8 專有：既有 ΣW Builder / Memory\n每 layer 保存一次\nPE9 編譯時移除"];
+  group [label="既有 Group Controller\n12-channel 分組 / replay / K 計數\nDRAIN_MAC / 等待結果完成"];
+  align [label="既有 Weight Read Align\n同步 RAM 回應與 activation 對齊"];
+  array [label="編譯時擇一\nPE9：A−127 → 12×S9×S8\nPE8：A−128 → 12×S8×S8\nProduct FF → ACC32"];
+  result [label="Result Controller\n既有：PE9直接輸出 / PE8精簡修正\n待新增：PE8結果管線", fillcolor="#fff1cf"];
+  out [label="INT32 / channel / group-last / error\nvalid + ready 握手\n最後握手才完成該 group", fillcolor="#e4eef9"];
+  ext -> arb;
+  arb -> loader [label="load"];
+  arb -> group [label="compute：保存的 K/C"];
+  loader -> ram;
+  loader -> sums;
+  group -> align [style=dashed, label="發送 / 接受控制"];
+  ext -> align [label="activation replay"];
+  ram -> align [label="96-bit weights"];
+  align -> array;
+  group -> array [style=dashed, label="clear / accumulate"];
+  array -> result [label="12×ACC32，保持到取完"];
+  sums -> result [label="只在 PE8"];
+  result -> out;
+  result -> group [style=dashed, label="group_result_done", constraint=false];
+}

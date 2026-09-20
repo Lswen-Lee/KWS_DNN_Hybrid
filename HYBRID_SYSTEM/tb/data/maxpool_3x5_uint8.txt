@@ -1,0 +1,17 @@
+# One channel, height=3, width=5, channel-major row-major order.
+# The final column and final row are deliberately large and must be discarded.
+1
+2
+3
+4
+99
+5
+6
+7
+8
+100
+200
+201
+202
+203
+204

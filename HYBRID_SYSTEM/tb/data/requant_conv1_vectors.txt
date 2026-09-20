@@ -1,0 +1,11 @@
+# accumulator multiplier_q31 zero_point expected_uint8 description
+5872 4157385 127 138 conv1_filter0_y0_x0
+7241 4157385 127 141 conv1_filter0_y0_x1
+6437 4157385 127 139 conv1_filter0_y1_x0
+-2219 4157385 127 123 conv1_filter0_y10_x10
+-38754 4157385 127 52 conv1_filter0_y29_x60
+5935 3133518 127 136 conv1_filter1_y0_x0
+10308 3133518 127 142 conv1_filter1_y0_x1
+-36233 3133518 127 74 conv1_filter1_y29_x60
+633 1991215 127 128 conv1_filter3_y0_x0
+-410 1991215 127 127 conv1_filter3_y0_x1
