@@ -1,5 +1,16 @@
 # PE 三版本 PYNQ-Z2 板級自我測試
 
+## 2026-09-21：新增 zp128／PoT 三組固定 top
+
+舊 `pe9`／`pe8_compact`／`pe8_pipeline` 保留 zp127 raw INT32 測試。
+新版 `pe9_pot`／`pe8_compact_pot`／`pe8_pipeline_pot` 使用相同板級腳位與125 MHz，
+測試從權重載入至 zp128 MAC、PoT 重量化、ReLU（FC2 bypass）及 UINT8 接收。
+create_pe_board_project.tcl 支援六組配置，仍是只匯入、GUI合成的正常top流程，沒有OOC。
+例如 `set pe_variant pe8_compact_pot` 後 source 原create腳本，新建 build/board/pe8_compact_pot。
+六組板級模擬及Tcl mock通過；新組態尚未在Windows Vivado或板上驗證。
+完整架構、狀態圖、PE9/PE8差異和測試範圍見 [PE PoT整合](../../HYBRID_SYSTEM/docs/PE_POT_INTEGRATION.md)。
+下方舊板測 golden 與路徑描述仍指不含 `_pot` 的原始組態。
+
 ## 修正紀錄：XDC if／post-synth 缺少 board_clk
 
 使用者 log 顯示 synth_design 已成功產生 DCP，但 XDC 的 if 不被 project XDC reader 支援，

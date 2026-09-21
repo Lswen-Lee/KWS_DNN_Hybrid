@@ -1,9 +1,13 @@
 `timescale 1ns/1ps
 // One resident layer, one patch/vector per compute command. No bias/requant.
 // PE8_MODE is an elaboration constant; only ONE array is instantiated.
+// INPUT_ZERO_POINT=127 preserves the legacy PE8 sum-W correction.
+// INPUT_ZERO_POINT=128 removes that entire path; both arrays compute (A-128)*W.
+// RESULT_PIPELINED at zp128 selects an elastic raw output FF, not sum correction.
 module pe_memory_engine #(
     parameter bit PE8_MODE = 1'b1,
-    parameter bit RESULT_PIPELINED = 1'b0
+    parameter bit RESULT_PIPELINED = 1'b0,
+    parameter integer INPUT_ZERO_POINT = 127
 ) (
     input logic clk, rst,
     input logic load_valid,
@@ -33,6 +37,10 @@ module pe_memory_engine #(
     // validate parameters before launching synthesis.
     generate if (!PE8_MODE && RESULT_PIPELINED) begin : g_invalid_configuration
         initial $fatal(1, "INVALID_PE_CONFIGURATION: pipeline requires PE8_MODE=1");
+    end endgenerate
+    localparam bit NEED_SUM = PE8_MODE && INPUT_ZERO_POINT == 127;
+    generate if (INPUT_ZERO_POINT != 127 && INPUT_ZERO_POINT != 128) begin : g_invalid_zp
+        initial $fatal(1, "INPUT_ZERO_POINT must be 127 or 128");
     end endgenerate
     logic [7:0] layer_k;
     logic [5:0] layer_channels;
@@ -76,7 +84,7 @@ module pe_memory_engine #(
     wire sum_valid, sum_ready;
     wire signed [31:0] weight_sum;
     wire [4:0] sum_channel_id;
-    pe_layer_weight_loader #(.SUM_ENABLE(PE8_MODE)) loader (
+    pe_layer_weight_loader #(.SUM_ENABLE(NEED_SUM)) loader (
         .clk(clk), .rst(rst), .cmd_valid(loader_cmd_valid), .cmd_ready(loader_ready),
         .cmd_k(load_k), .cmd_channels(load_channels),
         .weight_valid(weight_valid), .weight_ready(weight_ready), .weight_i8(weight_i8),
@@ -164,6 +172,21 @@ module pe_memory_engine #(
             .lane_mask(lane_mask), .activation_s8(a8), .weight_vector_i8(aligned_w),
             .result_vector_s32(raw_results)
         );
+    end else begin : g_pe9
+        wire signed [8:0] a9;
+        if (INPUT_ZERO_POINT == 127) begin : g_zp127
+            activation_center_127 converter (.activation_u8(aligned_a), .activation_centered(a9));
+        end else begin : g_zp128
+            // Same mathematical value as PE8, sign-extended to the 9-bit lane.
+            assign a9 = $signed({~aligned_a[7], ~aligned_a[7], aligned_a[6:0]});
+        end
+        pe_array_12 array_core (
+            .clk(clk), .rst(rst), .clear(pe_clear), .accumulate_en(pe_accumulate_en),
+            .lane_mask(lane_mask), .activation_centered(a9), .weight_vector_i8(aligned_w),
+            .result_vector_s32(raw_results)
+        );
+    end endgenerate
+    generate if (NEED_SUM) begin : g_sum_memory
         pe_channel_sum_memory sums (
             .clk(clk), .rst(rst), .layer_clear(load_fire),
             .wr_valid(sum_valid), .wr_ready(sum_ready), .wr_channel_id(sum_channel_id),
@@ -171,14 +194,7 @@ module pe_memory_engine #(
             .rd_channel_id(sum_rd_id), .out_valid(sum_out_valid), .out_ready(sum_out_ready),
             .out_channel_id(sum_out_id), .out_weight_sum(sum_data), .out_error(sum_error)
         );
-    end else begin : g_pe9
-        wire signed [8:0] a9;
-        activation_center_127 converter (.activation_u8(aligned_a), .activation_centered(a9));
-        pe_array_12 array_core (
-            .clk(clk), .rst(rst), .clear(pe_clear), .accumulate_en(pe_accumulate_en),
-            .lane_mask(lane_mask), .activation_centered(a9), .weight_vector_i8(aligned_w),
-            .result_vector_s32(raw_results)
-        );
+    end else begin : g_no_sum_memory
         assign sum_ready = 1'b1;
         assign sum_rd_ready = 1'b0;
         assign sum_out_valid = 1'b0;
@@ -186,7 +202,7 @@ module pe_memory_engine #(
         assign sum_data = 32'sd0;
         assign sum_error = 1'b0;
     end endgenerate
-    generate if (PE8_MODE && RESULT_PIPELINED) begin : g_pipeline_result
+    generate if (NEED_SUM && RESULT_PIPELINED) begin : g_pipeline_result
     pe8_result_controller_pipeline results (
         .clk(clk), .rst(rst), .result_start_valid(result_start_valid), .result_start_ready(result_start_ready),
         .channel_base(replay_channel_base), .active_lanes(active_lanes), .raw_results(raw_results),
@@ -198,7 +214,8 @@ module pe_memory_engine #(
         .out_channel_id(out_channel_id), .out_last(out_group_last), .out_error(out_error)
     );
     end else begin : g_compact_result
-    pe_result_controller #(.PE8_MODE(PE8_MODE)) results (
+    pe_result_controller #(.PE8_MODE(PE8_MODE), .APPLY_SUM_CORRECTION(NEED_SUM),
+        .RAW_PIPELINED(!NEED_SUM && RESULT_PIPELINED)) results (
         .clk(clk), .rst(rst), .result_start_valid(result_start_valid), .result_start_ready(result_start_ready),
         .channel_base(replay_channel_base), .active_lanes(active_lanes), .raw_results(raw_results),
         .busy(unused_result_busy), .group_result_done(group_result_done),

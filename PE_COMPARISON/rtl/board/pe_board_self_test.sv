@@ -4,6 +4,7 @@
 module pe_board_self_test #(
     parameter bit PE8_MODE=0,
     parameter bit RESULT_PIPELINED=0,
+    parameter bit POT_MODEL=0,
     parameter integer TIMEOUT_CYCLES=1000000
 ) (
     input logic clk, rst,
@@ -38,6 +39,7 @@ module pe_board_self_test #(
     // Deliberately exercise downstream backpressure, including last outputs.
     wire out_ready = !rst && !pass && !fail && watchdog[2:0]!=0;
     assign busy = !rst && !pass && !fail;
+    generate if(!POT_MODEL) begin : g_legacy
     pe_memory_engine #(.PE8_MODE(PE8_MODE),.RESULT_PIPELINED(RESULT_PIPELINED)) engine (
         .clk(clk),.rst(rst),.load_valid(load_valid),.load_ready(load_ready),
         .load_k(load_k),.load_channels(load_channels),.load_busy(load_busy),
@@ -52,6 +54,15 @@ module pe_board_self_test #(
         .out_channel_id(out_channel_id),.out_group_last(out_group_last),.out_error(out_error)
     );
     pe_board_golden golden (.test_id(test_id),.channel_id(out_channel_id),.value(expected_data));
+    end else begin : g_pot
+        wire [7:0] out_uint8;
+        pe_pot_engine #(.PE8_MODE(PE8_MODE),.RESULT_PIPELINED(RESULT_PIPELINED)) engine (
+            .compute_layer_id(test_id==0 ? 3'd0 : (test_id==1 ? 3'd3 : 3'd4)),
+            .relu_enable(test_id!=2), .out_data(out_uint8), .*
+        );
+        assign out_data=$signed({24'd0,out_uint8});
+        pe_board_golden_pot golden (.test_id(test_id),.channel_id(out_channel_id),.value(expected_data));
+    end endgenerate
     function automatic [7:0] weight_value(input [5:0] c, input [7:0] k, input [1:0] t);
         weight_value = 8'(32'(c)*71 + 32'(k)*29 + 128 + 32'(t)*17);
     endfunction

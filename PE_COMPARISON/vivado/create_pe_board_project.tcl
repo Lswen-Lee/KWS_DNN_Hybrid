@@ -1,7 +1,8 @@
 # Import-only, normal top-level flow: no OOC options or abstract I/O delays.
-# set pe_variant pe9|pe8_compact|pe8_pipeline ; source this_file.tcl
-if {![info exists pe_variant] || $pe_variant ni {pe9 pe8_compact pe8_pipeline}} {
-    error "Set pe_variant to pe9, pe8_compact, or pe8_pipeline"
+# Legacy: pe9|pe8_compact|pe8_pipeline; PoT zp128: add _pot to the variant.
+# set pe_variant pe8_compact_pot ; source this_file.tcl
+if {![info exists pe_variant] || $pe_variant ni {pe9 pe8_compact pe8_pipeline pe9_pot pe8_compact_pot pe8_pipeline_pot}} {
+    error "Set pe_variant to pe9/pe8_compact/pe8_pipeline (legacy) or add _pot (zp128 with quantization)"
 }
 if {[llength [get_projects -quiet]]} {error "Close the current project first"}
 set pb_root [file normalize [file join [file dirname [info script]] ..]]
@@ -32,6 +33,15 @@ foreach spec {
 } {lappend pb_sources [file join $pb_parent $spec]}
 foreach name {pe_board_clock_reset pe_board_self_test pe_board_golden pe_board_top} {
     lappend pb_sources [file join $pb_root rtl board ${name}.sv]
+}
+if {[string match *_pot $pe_variant]} {
+    foreach spec {
+        HYBRID_SYSTEM/rtl/integration/pe_pot_engine.sv
+        HYBRID_SYSTEM/rtl/datapath/requantizer_int32_to_uint8_pot.sv
+        HYBRID_SYSTEM/rtl/datapath/kws_pot_shift_rom.sv
+        HYBRID_SYSTEM/rtl/datapath/pe_pot_result_stream.sv
+        PE_COMPARISON/rtl/board/pe_board_golden_pot.sv
+    } {lappend pb_sources [file join $pb_parent $spec]}
 }
 set pb_top ${pe_variant}_board_top
 lappend pb_sources [file join $pb_root rtl board ${pb_top}.sv]

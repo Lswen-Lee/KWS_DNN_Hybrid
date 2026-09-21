@@ -1,5 +1,14 @@
 # KWS 12-Lane PE Core 中文架構說明
 
+## 2026-09-21：同模型 zp128／PoT 比較配置
+
+PE9 MAC 仍使用 LUT signed9×8、Product FF、ACC FF，不改乘法器。
+共用 pe_memory_engine 新增 INPUT_ZERO_POINT（預設127）；設為128時改接 A−128 的9-bit sign extension。
+新 pe9_pot_board_top 透過 pe_pot_engine 接上 PoT／ReLU128／FIFO，與 PE8 使用同一數值契約。
+三種新版 engine／板級模擬皆通過；Vivado新報告與板上測試仍需執行。
+因9-bit輸入實際只有−128..127，合成器可能裁掉冗餘位寬，不能保證與PE8有明顯LUT差距。
+完整差異、FSM、驗證與GUI匯入見 [PE PoT整合](../../HYBRID_SYSTEM/docs/PE_POT_INTEGRATION.md)。
+
 ## 最新狀態：PE9 LUT／FF（2026-09-14）
 
 本節取代下方歷史DSP狀態。pe_mac_lane已移除DSP48E1，採signed9×8

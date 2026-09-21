@@ -1,7 +1,8 @@
 # PoT requantizer：zp128 / nearest-even / per-channel shift
 
-日期：2026-09-21。本次只新增獨立元件、TB、匯出資料驗證工具及 Makefile 目標。
-尚未替換 kws_postprocess 或修改 PE/DCIM engine；原本 zp127 / Q31 模組保留。
+日期：2026-09-21。第一階段建立獨立元件、TB 與匯出資料驗證工具；第二階段已完成
+PE zp128、PoT stream、frame postprocess、板級新組態與獨立 DCIM 修正元件。
+最新架構、FSM、檔案／測試與整合界線見 [PE PoT 整合](PE_POT_INTEGRATION.md)。原本 zp127 / Q31 模組保留。
 
 ## 1. 規格與數值契約
 
@@ -113,7 +114,10 @@ shape、scale、checkpoint SHA及sample index一致，輸出per-channel shift表
 這是模型zero-point變更使補償不再需要，不是對舊模型無條件刪掉加法的代數優化。
 把ΣW設零但仍保留其RAM／控制器，不等於最簡架構；應於elaboration移除補償路徑。
 
-## 6. 尚未修改的整合清單（下一步）
+## 6. 第一階段的整合規劃（歷史清單）
+
+此表記錄最初待做項目，不是目前進度。PE／shift／後處理／新板級組態已實作；
+DCIM 只完成獨立修正器，未完成 master 統計與全段推論。請以 [最新整合文件](PE_POT_INTEGRATION.md) 為準。
 
 | 檔案／位置 | 需要的調整 |
 |---|---|

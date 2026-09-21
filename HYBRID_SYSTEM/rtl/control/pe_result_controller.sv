@@ -3,7 +3,9 @@
 // stable from start handshake through group_result_done. No result copy RAM.
 // PE8_MODE is elaboration-time selection, NOT a run-time mode input.
 module pe_result_controller #(
-    parameter bit PE8_MODE = 1'b1
+    parameter bit PE8_MODE = 1'b1,
+    parameter bit APPLY_SUM_CORRECTION = PE8_MODE,
+    parameter bit RAW_PIPELINED = 1'b0
 ) (
     input logic clk, rst,
     input logic result_start_valid,
@@ -36,10 +38,11 @@ module pe_result_controller #(
     wire output_fire = out_valid && out_ready;
     assign result_start_ready = !rst && state == IDLE && descriptor_ok;
     assign busy = state != IDLE;
-    assign out_channel_id = selected_channel;
-    assign out_last = lane_index == active_lanes - 4'd1;
+    wire selected_last = lane_index == active_lanes - 4'd1;
 
-    generate if (PE8_MODE) begin : g_pe8
+    generate if (APPLY_SUM_CORRECTION) begin : g_pe8
+        assign out_channel_id = selected_channel;
+        assign out_last = selected_last;
         logic error_pending;
         logic correction_ready, correction_valid, correction_overflow;
         logic signed [31:0] correction_data;
@@ -85,7 +88,43 @@ module pe_result_controller #(
                 endcase
             end
         end
+    end else if (RAW_PIPELINED) begin : g_raw_pipeline
+        // One elastic output FF, no sum RAM or correction adder.
+        logic valid_q, last_q;
+        logic [4:0] channel_q;
+        logic signed [31:0] data_q;
+        logic issued_all;
+        wire slot_ready = !valid_q || out_ready;
+        wire issue = state == EMIT && !issued_all && slot_ready;
+        assign sum_rd_valid=0;
+        assign sum_rd_channel_id=0;
+        assign sum_out_ready=0;
+        assign out_valid=!rst && valid_q;
+        assign out_data=data_q;
+        assign out_channel_id=channel_q;
+        assign out_last=last_q;
+        assign out_error=0;
+        always_ff @(posedge clk) begin
+            if(rst) begin
+                state<=IDLE; lane_index<=0; valid_q<=0; last_q<=0;
+                channel_q<=0; data_q<=0; issued_all<=0; group_result_done<=0;
+            end else begin
+                group_result_done<=0;
+                if(slot_ready) valid_q<=issue;
+                if(issue) begin
+                    data_q<=selected_raw; channel_q<=selected_channel; last_q<=selected_last;
+                    if(selected_last) issued_all<=1;
+                    else lane_index<=lane_index+1'b1;
+                end
+                if(state==IDLE && result_start_valid && result_start_ready) begin
+                    state<=EMIT; lane_index<=0; issued_all<=0;
+                end
+                if(output_fire && out_last) begin state<=IDLE; group_result_done<=1; end
+            end
+        end
     end else begin : g_pe9
+        assign out_channel_id = selected_channel;
+        assign out_last = selected_last;
         // No sum reads, correction instance, arithmetic adder, or data FF here.
         assign sum_rd_valid = 1'b0;
         assign sum_rd_channel_id = 5'd0;

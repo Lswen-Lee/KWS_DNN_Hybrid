@@ -3,6 +3,7 @@
 module tb_pe_memory_engine;
     parameter bit PE8_MODE=1;
     parameter bit RESULT_PIPELINED=0;
+    parameter integer INPUT_ZERO_POINT=127;
     logic clk=0, rst=1;
     always #4 clk=~clk;
     logic load_valid=0, load_ready;
@@ -21,7 +22,7 @@ module tb_pe_memory_engine;
     logic signed [31:0] out_data;
     logic [4:0] out_channel_id;
     logic out_group_last, out_error;
-    pe_memory_engine #(.PE8_MODE(PE8_MODE), .RESULT_PIPELINED(RESULT_PIPELINED)) dut (.*);
+    pe_memory_engine #(.PE8_MODE(PE8_MODE), .RESULT_PIPELINED(RESULT_PIPELINED), .INPUT_ZERO_POINT(INPUT_ZERO_POINT)) dut (.*);
 
     // Passive one-cycle reference for the elastic operand stage. No force,
     // no bypass: all stimulus still enters through public engine interfaces.
@@ -81,7 +82,7 @@ module tb_pe_memory_engine;
         longint signed total;
         total=0;
         for(integer k=0;k<ref_k;k=k+1)
-            total=total+(longint'(avalue(k))-127)*longint'($signed(wvalue(c,k)));
+            total=total+(longint'(avalue(k))-longint'(INPUT_ZERO_POINT))*longint'($signed(wvalue(c,k)));
         return total;
     endfunction
     // Sink is independent of the activation source; deterministic stalls.

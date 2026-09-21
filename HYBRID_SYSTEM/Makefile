@@ -20,6 +20,7 @@ test-requantizer-pot: build-requantizer-pot
 	$(BUILD_DIR)/requantizer_pot/Vtb_requantizer_int32_to_uint8_pot
 test-requantizer-pot-exports: build-requantizer-pot
 	python3 scripts/export_pot_requant_vectors.py
+	python3 scripts/check_pot_shift_rom.py
 	$(BUILD_DIR)/requantizer_pot/Vtb_requantizer_int32_to_uint8_pot +VECTORS=$(BUILD_DIR)/requantizer_pot/software_vectors.txt
 
 PIPE_RESULT_RTL := rtl/control/pe8_result_controller_pipeline.sv $(RTL_DATAPATH)/pe8_result_correction.sv
@@ -36,6 +37,37 @@ test-result-pipeline-iverilog: | $(BUILD_DIR)
 	$(VVP) $(BUILD_DIR)/result_pipeline.vvp
 
 ENGINE_RTL = $(GROUP_RTL) rtl/control/pe_result_controller.sv rtl/control/pe8_result_controller_pipeline.sv rtl/integration/pe_memory_engine.sv
+POT_STREAM_RTL = $(POT_RTL) rtl/datapath/kws_pot_shift_rom.sv rtl/datapath/pe_pot_result_stream.sv
+POT_ENGINE_RTL = $(ENGINE_RTL) $(POT_STREAM_RTL) rtl/integration/pe_pot_engine.sv
+.PHONY: test-pot-engine
+test: test-memory-engine-zp128 test-pot-engine test-pot-stream test-postprocess-pot test-dcim-offset check-engine-elaboration-zp128
+.PHONY: test-pot-stream test-postprocess-pot test-dcim-offset
+test-pot-stream: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_pe_pot_result_stream -Mdir $(BUILD_DIR)/pot_stream $(POT_STREAM_RTL) tb/datapath/tb_pe_pot_result_stream.sv
+	$(BUILD_DIR)/pot_stream/Vtb_pe_pot_result_stream
+test-postprocess-pot: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_kws_postprocess_pot -Mdir $(BUILD_DIR)/postprocess_pot $(POT_RTL) $(addprefix rtl/datapath/,relu_uint8_zp127.sv maxpool2x2_uint8.sv kws_postprocess_pot.sv) tb/datapath/tb_kws_postprocess_pot.sv
+	$(BUILD_DIR)/postprocess_pot/Vtb_kws_postprocess_pot
+test-dcim-offset: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_dcim_u8_offset_correction -Mdir $(BUILD_DIR)/dcim_offset rtl/dcim_adapter/dcim_u8_offset_correction.sv tb/datapath/tb_dcim_u8_offset_correction.sv
+	$(BUILD_DIR)/dcim_offset/Vtb_dcim_u8_offset_correction
+test-pot-engine: | $(BUILD_DIR)
+	@for cfg in 0_0 1_0 1_1; do mode=$${cfg%_*}; pipe=$${cfg#*_}; \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL "-GPE8_MODE=1'b$$mode" "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_pe_pot_engine -Mdir $(BUILD_DIR)/pot_engine_$$cfg $(POT_ENGINE_RTL) tb/integration/tb_pe_pot_engine.sv && \
+		$(BUILD_DIR)/pot_engine_$$cfg/Vtb_pe_pot_engine || exit $$?; \
+	done
+.PHONY: test-memory-engine-zp128
+.PHONY: check-engine-elaboration-zp128
+check-engine-elaboration-zp128: | $(BUILD_DIR)
+	@for cfg in 0_0 1_0 1_1; do mode=$${cfg%_*}; pipe=$${cfg#*_}; \
+		$(VERILATOR) --xml-only -Wall -Wno-UNUSEDSIGNAL "-GPE8_MODE=1'b$$mode" "-GRESULT_PIPELINED=1'b$$pipe" -GINPUT_ZERO_POINT=128 --top-module pe_memory_engine --xml-output $(BUILD_DIR)/zp128_$$cfg.xml $(ENGINE_RTL) || exit $$?; \
+	done
+	python3 scripts/verify_engine_elaboration.py $(BUILD_DIR)/zp128_1_0.xml $(BUILD_DIR)/zp128_0_0.xml $(BUILD_DIR)/zp128_1_1.xml 128
+test-memory-engine-zp128: | $(BUILD_DIR)
+	@for cfg in 0_0 1_0 1_1; do mode=$${cfg%_*}; pipe=$${cfg#*_}; \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL "-GPE8_MODE=1'b$$mode" "-GRESULT_PIPELINED=1'b$$pipe" -GINPUT_ZERO_POINT=128 --top-module tb_pe_memory_engine -Mdir $(BUILD_DIR)/zp128_$$cfg $(ENGINE_RTL) tb/integration/tb_pe_memory_engine.sv && \
+		$(BUILD_DIR)/zp128_$$cfg/Vtb_pe_memory_engine || exit $$?; \
+	done
 .PHONY: test-invalid-engine
 test: test-invalid-engine
 test-invalid-engine: | $(BUILD_DIR)
@@ -154,6 +186,10 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-memory-engine-zp128 / check-engine-elaboration-zp128 - three raw zp128 configurations"
+	@echo "  make test-pot-engine / test-pot-stream - end-to-end PE/PoT and elastic result path"
+	@echo "  make test-postprocess-pot / test-dcim-offset - frame postprocessing and standalone DCIM correction"
+	@echo "  make test-requantizer-pot-exports - software bytes and model shift ROM consistency"
 	@echo "HYBRID_SYSTEM verification targets"
 	@echo "  make test-result-pipeline / lint-result-pipeline / test-result-pipeline-iverilog - standalone PE8 result pipeline"
 	@echo "  make test-memory-engine / lint-memory-engine - PE9, PE8 compact, PE8 pipeline engine"

@@ -1,10 +1,13 @@
 `timescale 1ns/1ps
 
 // One-stage streaming ReLU for the model's unsigned activation format.
-// Quantized real zero is code 127, therefore ReLU is max(input, 127), not
-// max(input, 0).  When enable=0 the stage remains as a one-cycle pipeline
+// Quantized real zero is ZERO_POINT (legacy default 127, PoT model 128),
+// therefore ReLU is max(input, ZERO_POINT), not max(input, 0).
+// When enable=0 the stage remains as a one-cycle pipeline
 // register so that control/data latency does not change between layers.
-module relu_uint8_zp127 (
+module relu_uint8_zp127 #(
+    parameter logic [7:0] ZERO_POINT = 8'd127
+) (
     input  logic       clk,
     input  logic       rst,
     input  logic       enable,
@@ -21,8 +24,8 @@ module relu_uint8_zp127 (
         end else begin
             out_valid <= in_valid;
 
-            if (enable && (input_uint8 < 8'd127))
-                output_uint8 <= 8'd127;
+            if (enable && (input_uint8 < ZERO_POINT))
+                output_uint8 <= ZERO_POINT;
             else
                 output_uint8 <= input_uint8;
         end

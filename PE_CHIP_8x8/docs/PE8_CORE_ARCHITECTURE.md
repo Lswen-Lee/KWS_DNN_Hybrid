@@ -1,10 +1,15 @@
 # Signed 8×8 PE 架構與驗證
 
-## 2026-09-21：PoT requantizer 與 zp128 整合規劃
+## 2026-09-21：PoT requantizer 與 zp128 整合完成範圍
 
 新增獨立 `requantizer_int32_to_uint8_pot.sv`：signed INT32、每筆5-bit shift、nearest-even、zp128飽和輸出，三個register stages、II=1。
-新PoT模型的PE8 raw accumulator已是Σ(A−128)W，不需要ΣW補償；本次尚未變更engine／板測／postprocess。
-RTL單元及匯出sample逐層26,944筆驗證通過，完整驗證範圍與下一步修改清單見
+新PoT模型的PE8 raw accumulator已是Σ(A−128)W，不需要ΣW補償。
+engine 已新增 INPUT_ZERO_POINT=128 固定配置，移除 sum builder／memory／correction 實例。
+pe_pot_engine 接上 shift ROM、PoT、可選 ReLU128、FIFO 與完成控制；
+PE8 pipeline 在新配置改用一級 raw output FF，不再套用舊 ΣW correction pipeline。
+新增三種 *_pot_board_top，正常板級匯入、功能模擬通過；舊zp127組態保留。
+完整架構／狀態圖／操作命令見 [PE PoT整合](../../HYBRID_SYSTEM/docs/PE_POT_INTEGRATION.md)。
+RTL單元及匯出sample逐層26,944筆驗證通過，量化規格見
 [PoT requantizer架構](../../HYBRID_SYSTEM/docs/REQUANTIZER_POT_ARCHITECTURE.md)。
 沒有新Vivado或板級結果，既有zp127版本繼續保留。
 
