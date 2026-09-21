@@ -7,6 +7,21 @@ BUILD_DIR := build
 RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
+POT_RTL := $(RTL_DATAPATH)/requantizer_int32_to_uint8_pot.sv
+POT_TB := $(TB_DATAPATH)/tb_requantizer_int32_to_uint8_pot.sv
+.PHONY: lint-requantizer-pot build-requantizer-pot test-requantizer-pot test-requantizer-pot-exports
+test: test-requantizer-pot
+lint: lint-requantizer-pot
+lint-requantizer-pot:
+	$(VERILATOR) --lint-only -Wall --top-module requantizer_int32_to_uint8_pot $(POT_RTL)
+build-requantizer-pot: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_requantizer_int32_to_uint8_pot -Mdir $(BUILD_DIR)/requantizer_pot $(POT_RTL) $(POT_TB)
+test-requantizer-pot: build-requantizer-pot
+	$(BUILD_DIR)/requantizer_pot/Vtb_requantizer_int32_to_uint8_pot
+test-requantizer-pot-exports: build-requantizer-pot
+	python3 scripts/export_pot_requant_vectors.py
+	$(BUILD_DIR)/requantizer_pot/Vtb_requantizer_int32_to_uint8_pot +VECTORS=$(BUILD_DIR)/requantizer_pot/software_vectors.txt
+
 PIPE_RESULT_RTL := rtl/control/pe8_result_controller_pipeline.sv $(RTL_DATAPATH)/pe8_result_correction.sv
 .PHONY: test-result-pipeline lint-result-pipeline test-result-pipeline-iverilog
 test: test-result-pipeline
