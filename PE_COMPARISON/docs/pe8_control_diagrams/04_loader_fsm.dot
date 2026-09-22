@@ -1,0 +1,21 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="pe_layer_weight_loader: actual FSM, SUM_ENABLE=0"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ IDLE [label="IDLE\ncmd_ready=1"];
+ START_CHANNEL [label="START_CHANNEL\nbuilder_cmd_ready tied to 1"];
+ LOAD_CHANNEL [label="LOAD_CHANNEL\nwrite weights on handshake"];
+ NEXT_CHANNEL [label="NEXT_CHANNEL"];
+ invalid [shape=note,label="Invalid: K=0, C=0, C>32,\nK * ceil(C/12) > 512\nerror pulses; layer_ready cleared",fillcolor="#ffdede"];
+ IDLE -> START_CHANNEL [label="valid command accepted\nsave K,C; lane=0; base=0"];
+ IDLE -> IDLE [label="no command or invalid command"];
+ invalid -> IDLE [style=dashed];
+ START_CHANNEL -> LOAD_CHANNEL [label="next edge"];
+ LOAD_CHANNEL -> LOAD_CHANNEL [label="no weight fire: hold\nnon-final fire: k_index++"];
+ LOAD_CHANNEL -> NEXT_CHANNEL [label="weight fire && k_index==K-1\nk_index=0"];
+ NEXT_CHANNEL -> START_CHANNEL [label="more channels\nlane++ or wrap at 11\non wrap: group_base+=K"];
+ NEXT_CHANNEL -> IDLE [label="final channel\nlayer_ready=1; done pulse"];
+ note [shape=note,label="WAIT_SUM exists in source enum,\nbut is unreachable in zp128.\nNo sum builder / sum memory.",fillcolor="#fff1d6"];
+
+}

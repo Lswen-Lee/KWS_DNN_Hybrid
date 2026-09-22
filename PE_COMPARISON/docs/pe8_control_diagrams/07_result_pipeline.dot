@@ -1,0 +1,27 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="PE8 pipeline: actual FSM + elastic output state"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ subgraph cluster_fsm { label="Actual state register: only IDLE / EMIT";
+ IDLE [label="IDLE"];
+ EMIT [label="EMIT\nissue if !issued_all && slot_ready"];
+ IDLE -> EMIT [label="start handshake\nlane=0; issued_all=0"];
+ EMIT -> EMIT [label="issue non-final: lane++\nissue final: issued_all=1\notherwise: hold / wait for last output"];
+ EMIT -> IDLE [label="output_fire && last_q\ngroup_result_done pulse"];
+ }
+ subgraph cluster_ff { label="Conceptual output FF occupancy (NOT extra FSM states)";
+ empty [label="EMPTY\nvalid_q=0",fillcolor="#fff1d6"];
+ full [label="FULL, not last\nvalid_q=1; last_q=0",fillcolor="#fff1d6"];
+ last [label="FULL, last\nvalid_q=1; last_q=1\nissued_all=1",fillcolor="#fff1d6"];
+ empty -> full [label="issue non-final"];
+ empty -> last [label="issue final (e.g. C=1)"];
+ full -> full [label="!out_ready: hold\nor pop + refill non-final"];
+ full -> last [label="pop + refill final"];
+ last -> last [label="!out_ready: hold"];
+ last -> empty [label="last output_fire"];
+ }
+ EMIT -> empty [style=dashed,label="slot_ready = !valid_q || out_ready"];
+ note [shape=note,label="One edge may consume OLD output\nand capture NEXT lane together.\nII=1, not a two-cycle alternating FSM.",fillcolor="#dff4df"];
+
+}

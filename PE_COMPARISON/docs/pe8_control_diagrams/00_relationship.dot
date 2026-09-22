@@ -1,0 +1,38 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="PE8 zp128: controller relationships"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ reset [label="clock_reset\nbutton synchronizer + release counter",fillcolor="#fff1d6"];
+ top [label="pe_board_self_test\nBoard stimulus / scoreboard FSM"];
+ job [label="pe_pot_engine\nactive / core_finished / retired",fillcolor="#fff1d6"];
+ arb [label="pe_memory_engine\nload/compute arbitration",fillcolor="#fff1d6"];
+ loader [label="pe_layer_weight_loader\nSUM_ENABLE = 0"];
+ group [label="pe_group_controller\n12-channel groups"];
+ ram [label="weight_buffer + read_align\nsynchronous weights + metadata",fillcolor="#fff1d6"];
+ operand [label="Operand FF -> 12 MAC lanes\nproduct_valid / ACC",fillcolor="#fff1d6"];
+ result [label="pe_result_controller\ncompact OR raw pipeline"];
+ post [label="PoT + ReLU + FIFO\nreserved / count / tags",fillcolor="#fff1d6"];
+ reset -> top [label="rst to all sequential blocks"];
+ top -> job [label="load / compute commands"];
+ job -> arb [label="gate commands until drain"];
+ arb -> loader [label="load wins if simultaneous"];
+ arb -> group [label="loaded layer + compute"];
+ top -> loader [label="weight_valid / ready"];
+ loader -> ram [label="wr_valid / ready"];
+ loader -> arb [label="layer_ready / load_done"];
+ group -> top [label="replay_valid / ready\nK, channel_base"];
+ top -> ram [label="activation, via group RUN"];
+ group -> ram [label="read address / last"];
+ ram -> operand [label="aligned activation + weights"];
+ group -> operand [label="clear / accumulate_en"];
+ operand -> result [label="12 x INT32 ACC"];
+ group -> result [label="result_start_valid / ready"];
+ result -> group [label="group_result_done"];
+ result -> post [label="raw_valid / raw_ready"];
+ post -> top [label="UINT8 out_valid / ready"];
+ post -> job [label="output accepted -> retired++"];
+ group -> job [label="core_done"];
+ job -> top [label="compute_done after ALL outputs"];
+
+}

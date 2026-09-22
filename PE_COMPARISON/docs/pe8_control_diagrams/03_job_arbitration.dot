@@ -1,0 +1,25 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="Job lifetime + command arbitration (conceptual)"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ idle [label="IDLE\nactive=0",fillcolor="#fff1d6"];
+ run [label="RUN\nactive=1; core_finished=0",fillcolor="#fff1d6"];
+ drain [label="DRAIN\nactive=1; core_finished=1",fillcolor="#fff1d6"];
+ ar [shape=diamond,label="rst=0, active=0?"];
+ load [shape=diamond,label="load_valid?"];
+ allow [label="Pass load to loader\ncompute is blocked"];
+ comp [label="Compute allowed only if:\n!load_busy && layer_ready\n&& group_ready"];
+ stop [label="Both command ready = 0"];
+ idle -> run [label="compute_valid && compute_ready\nlatch layer/ReLU; retired=0"];
+ run -> run [label="UINT8 output fire: retired++"];
+ run -> drain [label="observe core_done"];
+ drain -> drain [label="retired < channels\noutput fire: retired++"];
+ drain -> idle [label="old retired==channels\ncompute_done pulse"];
+ ar -> load [label="yes"];
+ ar -> stop [label="no"];
+ load -> allow [label="yes (load priority)"];
+ load -> comp [label="no"];
+ idle -> ar [style=dashed,label="combinational ready logic"];
+
+}

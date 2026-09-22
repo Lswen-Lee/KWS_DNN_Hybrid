@@ -1,0 +1,25 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="BRAM read + activation alignment: conceptual control"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ subgraph cluster_ram { label="pe_weight_buffer_12: out_valid";
+ re [label="EMPTY response\nout_valid=0",fillcolor="#fff1d6"];
+ rf [label="FULL response\nout_valid=1",fillcolor="#fff1d6"];
+ re -> rf [label="read_fire: register 12 weights"];
+ rf -> rf [label="stalled: hold\nor pop + new read"];
+ rf -> re [label="pop && !read_fire"];
+ }
+ subgraph cluster_align { label="pe_weight_read_align: pending";
+ ae [label="EMPTY metadata\npending=0",fillcolor="#fff1d6"];
+ af [label="PENDING metadata\npending=1",fillcolor="#fff1d6"];
+ ae -> af [label="input_fire: save activation,last\nand issue SAME read"];
+ af -> af [label="no output fire: hold\nor output + new input"];
+ af -> ae [label="output_fire && !input_fire"];
+ }
+ ae -> re [style=dashed,label="request handshake"];
+ rf -> af [style=dashed,label="weight_out_valid"];
+ af -> rf [style=dashed,label="weight_out_ready"];
+ note [shape=note,label="Legal writes have priority over new reads.\nrd_ready = !rst && !write_fire && (!out_valid || out_ready).\nAlign output valid = pending && weight_out_valid && !rst.\nRAM contents/read payload are NOT reset.",fillcolor="#fff1d6"];
+
+}

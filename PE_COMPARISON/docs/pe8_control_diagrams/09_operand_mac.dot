@@ -1,0 +1,24 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="Operand buffer + PE8 MAC: concurrent pipeline controls"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ subgraph cluster_operand { label="Operand FF: conceptual occupancy";
+ empty [label="EMPTY\noperand_valid=0",fillcolor="#fff1d6"];
+ full [label="FULL\noperand_valid=1",fillcolor="#fff1d6"];
+ empty -> full [label="read_align_valid && read_align_ready"];
+ full -> full [label="PE not ready: hold\nor consume + refill"];
+ full -> empty [label="PE ready && no new aligned input"];
+ }
+ subgraph cluster_mac { label="Each MAC: conceptual product_valid";
+ p0 [label="NO pending product\nproduct_valid=0",fillcolor="#fff1d6"];
+ p1 [label="PRODUCT pending\nproduct_valid=1",fillcolor="#fff1d6"];
+ p0 -> p1 [label="accumulate_en: capture A*W"];
+ p1 -> p1 [label="accumulate_en: commit OLD product\nand capture NEW product"];
+ p1 -> p0 [label="!accumulate_en: commit OLD product"];
+ p0 -> p0 [label="!accumulate_en: keep ACC"];
+ }
+ full -> p1 [style=dashed,label="align_out_valid && align_out_ready\n= pe_accumulate_en"];
+ clear [shape=note,label="rst/clear has priority in all MACs:\nproduct_valid=0; product_reg=0; ACC=0.\nAn activation accepted at N commits at N+1.\nOperand FF and Product FF are different registers.",fillcolor="#fff1d6"];
+
+}

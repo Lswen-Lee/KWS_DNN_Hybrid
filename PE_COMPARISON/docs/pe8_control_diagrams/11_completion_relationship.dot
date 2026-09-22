@@ -1,0 +1,24 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="Three different completion events (do not merge)"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ sample [label="Final activation request accepted"];
+ operand [label="Final operand accepted by MAC"];
+ acc [label="Final product committed to ACC"];
+ start [label="result_start handshake"];
+ raw [label="Final RAW lane accepted by PoT stream"];
+ group [label="group_result_done pulse\nfrom result controller"];
+ more [shape=diamond,label="More output channels?"];
+ next [label="NEXT_GROUP -> CLEAR -> REPLAY\nprevious UINT8 data may still be in FIFO"];
+ core [label="core_done pulse\nfrom group controller"];
+ drain [label="pe_pot_engine waits for\ncore_finished && retired==channels"];
+ done [label="compute_done pulse\nboard FINISH checks received==C"];
+ sample -> operand -> acc -> start -> raw -> group -> more;
+ more -> next [label="yes"];
+ more -> core [label="no"];
+ core -> drain -> done;
+ sink [label="Each external UINT8 handshake\nretired++ and board received++",fillcolor="#fff1d6"];
+ sink -> drain [style=dashed,label="may happen before OR after core_done"];
+
+}

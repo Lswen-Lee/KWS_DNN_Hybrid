@@ -1,0 +1,14 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="PE8 compact: pe_result_controller actual FSM"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ IDLE [label="IDLE\nready if descriptor_ok"];
+ EMIT [label="EMIT\nout_valid=1\nraw ACC[lane_index] -> downstream"];
+ IDLE -> IDLE [label="no start handshake"];
+ IDLE -> EMIT [label="result_start handshake\nlane_index=0"];
+ EMIT -> EMIT [label="!out_ready: keep same lane\noutput_fire && !out_last: lane_index++"];
+ EMIT -> IDLE [label="output_fire && out_last\ngroup_result_done pulse"];
+ note [shape=note,label="out_ready is PoT stream in_ready,\nNOT board external out_ready.\nREAD_SUM / FEED_CORRECTION not used.\nRTL branch name g_pe9 is legacy;\nit is also used by zp128 PE8.",fillcolor="#fff1d6"];
+
+}

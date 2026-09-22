@@ -1,0 +1,44 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="pe_board_self_test: actual FSM (shared)"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ start [shape=point,label=""];
+ LOAD [label="LOAD\nload_valid=1"];
+ W_PREP [label="W_PREP\nregister weight"];
+ W_SEND [label="W_SEND\nweight_valid=1"];
+ LOAD_WAIT [label="LOAD_WAIT"];
+ COMPUTE [label="COMPUTE\ncompute_valid=1"];
+ REPLAY [label="REPLAY\nreplay_ready=1"];
+ A_PREP [label="A_PREP\nregister activation"];
+ A_SEND [label="A_SEND\nactivation_valid=1"];
+ FINISH [label="FINISH\nwait full UINT8 completion"];
+ NEXT [label="NEXT"];
+ PASSED [label="PASSED\npass=1 (sticky)",fillcolor="#dff4df"];
+ FAILED [label="FAILED\nfail=1 (sticky)",fillcolor="#ffdede"];
+ faults [shape=note,label="Concurrent monitor in every active state:\nresult mismatch -> code 1\nload/compute error -> code 2\ntimeout -> code 3\ninvalid state -> code 6",fillcolor="#fff1d6"];
+ start -> LOAD [label="rst: test_id=0, K=9, C=12"];
+ LOAD -> LOAD [label="!load_ready"];
+ LOAD -> W_PREP [label="load_ready"];
+ W_PREP -> W_SEND [label="next edge"];
+ W_SEND -> W_SEND [label="!weight_ready"];
+ W_SEND -> W_PREP [label="accepted, more weights\nadvance k/channel"];
+ W_SEND -> LOAD_WAIT [label="accepted final weight"];
+ LOAD_WAIT -> COMPUTE [label="load_done && layer_ready"];
+ COMPUTE -> REPLAY [label="compute_ready\nreceived=0; next_base=0"];
+ REPLAY -> A_PREP [label="replay_valid && descriptor matches\nnext_base+=12; k=0"];
+ REPLAY -> FAILED [label="descriptor mismatch / code 4"];
+ A_PREP -> A_SEND [label="next edge"];
+ A_SEND -> A_SEND [label="!activation_ready"];
+ A_SEND -> A_PREP [label="accepted, k < K-1"];
+ A_SEND -> REPLAY [label="accepted last k; next_base < C"];
+ A_SEND -> FINISH [label="accepted last k; next_base >= C"];
+ FINISH -> NEXT [label="compute_done && received==C"];
+ FINISH -> FAILED [label="compute_done && received!=C / code 5"];
+ NEXT -> LOAD [label="test_id<2: advance test\nK,C = 144,32 then 32,8"];
+ NEXT -> PASSED [label="test_id==2"];
+ faults -> FAILED [style=dashed,label="override normal transition"];
+ PASSED -> PASSED [label="until rst"];
+ FAILED -> FAILED [label="until rst"];
+
+}

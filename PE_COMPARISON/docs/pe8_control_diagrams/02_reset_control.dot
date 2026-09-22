@@ -1,0 +1,21 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="clock/reset: conceptual states, NOT enum FSM"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ start [shape=point,label=""];
+ sync [shape=note,label="reset_button -> button_meta -> button_sync\n2 synchronizer FFs; clk via IBUF -> BUFG"];
+ hold [label="RESET HELD\nreset_q=1; release_count=0",fillcolor="#fff1d6"];
+ wait [label="COUNT RELEASE\nreset_q=1; count++",fillcolor="#fff1d6"];
+ run [label="RUN\nreset_q=0",fillcolor="#dff4df"];
+ start -> hold [label="FPGA INIT"];
+ sync -> hold [style=dashed,label="button_sync=1"];
+ hold -> hold [label="button_sync=1"];
+ hold -> wait [label="button_sync=0"];
+ wait -> wait [label="button_sync=0 && !all_ones(count)"];
+ wait -> run [label="button_sync=0 && all_ones(count)"];
+ wait -> hold [label="button_sync=1"];
+ run -> hold [label="button_sync=1"];
+ run -> run [label="button_sync=0"];
+
+}

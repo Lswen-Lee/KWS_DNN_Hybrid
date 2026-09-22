@@ -1,0 +1,22 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="PoT result stream: pipeline + two occupancy counters"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", color="#35577a", fontname="DejaVu Sans", fontsize=12, margin="0.13,0.09"];
+ edge [fontname="DejaVu Sans", fontsize=10, color="#526578", arrowsize=0.7];
+
+ raw [label="raw_valid / raw_ready"];
+ room [shape=diamond,label="reserved < 8\nand !rst?"];
+ s1 [label="E0 / stage1\narithmetic shift + rounding decision",fillcolor="#fff1d6"];
+ s2 [label="E1 / stage2\nnearest-even correction",fillcolor="#fff1d6"];
+ s3 [label="E2 / stage3\nsaturate + zp128",fillcolor="#fff1d6"];
+ fifo [label="E3 / FIFO enqueue\noptional ReLU128 + delayed tags",fillcolor="#fff1d6"];
+ sink [label="Earliest E4 handshake\nUINT8 + channel + last + error"];
+ wait [label="Backpressure raw source\nDO NOT stall already accepted pipeline",fillcolor="#ffdede"];
+ raw -> room;
+ room -> s1 [label="yes + raw_valid: accept\nreserve one slot"];
+ room -> wait [label="no: raw_ready=0"];
+ s1 -> s2 -> s3 -> fifo;
+ fifo -> sink [label="count>0 && external out_ready"];
+ counters [shape=note,label="reserved(next) = reserved + accept - pop\ncount(next) = count + q_valid - pop\nreserved includes pipeline + FIFO items.\nFULL reserved=8 can still enqueue q_valid.\nFULL + pop releases input space NEXT cycle.\nTags advance with the 3-stage quantizer.",fillcolor="#fff1d6"];
+ fifo -> counters [style=dashed];
+
+}
