@@ -5,7 +5,11 @@ module pe_board_self_test #(
     parameter bit PE8_MODE=0,
     parameter bit RESULT_PIPELINED=0,
     parameter bit POT_MODEL=0,
-    parameter integer TIMEOUT_CYCLES=1000000
+    parameter integer TIMEOUT_CYCLES=1000000,
+    // Intentionally unused when the legacy (non-PoT) branch is elaborated.
+    /* verilator lint_off UNUSEDPARAM */
+    parameter bit POSTPROCESS_PIPELINED=1'b1
+    /* verilator lint_on UNUSEDPARAM */
 ) (
     input logic clk, rst,
     output wire busy,
@@ -56,7 +60,8 @@ module pe_board_self_test #(
     pe_board_golden golden (.test_id(test_id),.channel_id(out_channel_id),.value(expected_data));
     end else begin : g_pot
         wire [7:0] out_uint8;
-        pe_pot_engine #(.PE8_MODE(PE8_MODE),.RESULT_PIPELINED(RESULT_PIPELINED)) engine (
+        pe_pot_engine #(.PE8_MODE(PE8_MODE),.RESULT_PIPELINED(RESULT_PIPELINED),
+            .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) engine (
             .compute_layer_id(test_id==0 ? 3'd0 : (test_id==1 ? 3'd3 : 3'd4)),
             .relu_enable(test_id!=2), .out_data(out_uint8), .*
         );

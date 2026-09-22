@@ -1,14 +1,14 @@
 VERILATOR ?= verilator
 .DEFAULT_GOAL := test
 HYBRID := ../HYBRID_SYSTEM
-BOARD_RTL = $(wildcard rtl/board/*.sv) $(HYBRID)/rtl/integration/pe_pot_engine.sv $(addprefix $(HYBRID)/rtl/datapath/,requantizer_int32_to_uint8_pot.sv kws_pot_shift_rom.sv pe_pot_result_stream.sv)
+BOARD_RTL = $(wildcard rtl/board/*.sv) $(HYBRID)/rtl/integration/pe_pot_engine.sv $(addprefix $(HYBRID)/rtl/datapath/,requantizer_int32_to_uint8_pot.sv requantizer_int32_to_uint8_pot_comb.sv kws_pot_shift_rom.sv pe_pot_result_stream.sv)
 .PHONY: test-board lint-board
 test-board:
 	@mkdir -p build/board_sim
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME --top-module tb_pe_board -Mdir build/board_sim $(MEMORY_RTL) $(BOARD_RTL) sim_verilator/pe_board_clock_primitives.sv tb/tb_pe_board.sv
 	build/board_sim/Vtb_pe_board
 lint-board:
-	@for top in pe9_board_top pe8_compact_board_top pe8_pipeline_board_top pe9_pot_board_top pe8_compact_pot_board_top pe8_pipeline_pot_board_top; do \
+	@for top in pe9_board_top pe8_compact_board_top pe8_pipeline_board_top pe9_pot_board_top pe8_compact_pot_board_top pe8_pipeline_pot_board_top pe8_compact_pot_comb_board_top pe8_pipeline_pot_comb_board_top; do \
 	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME --top-module $$top $(MEMORY_RTL) $(BOARD_RTL) sim_verilator/pe_board_clock_primitives.sv || exit $$?; done
 MEMORY_RTL = $(RTL9) $(RTL8) $(addprefix $(HYBRID)/rtl/datapath/,pe_weight_buffer_12.sv pe_layer_weight_loader.sv pe_weight_sum_builder.sv pe_channel_sum_memory.sv pe_weight_read_align.sv pe8_result_correction.sv) $(addprefix $(HYBRID)/rtl/control/,pe_group_controller.sv pe_result_controller.sv pe8_result_controller_pipeline.sv) $(HYBRID)/rtl/integration/pe_memory_engine.sv $(wildcard rtl/memory_backed/*.sv)
 .PHONY: test-memory-comparison lint-memory-comparison test-memory-comparison-iverilog

@@ -2,6 +2,8 @@
 
 本圖集對照目前工作樹 RTL，範圍是 **zp128、PoT 後處理的板級比較架構**。兩版均保留 Operand FF 與 Product FF；pipeline 版另外在 raw ACC 輸出加入可停頓暫存器。不是重新設計控制器，也沒有修改 RTL。
 
+後續新增的 `POSTPROCESS_PIPELINED=0` 選項請看 [組合後處理與控制](../../HYBRID_SYSTEM/docs/PE_COMBINATIONAL_POSTPROCESS.md)。本圖集原 00～11 圖仍描述預設三級量化版；新增 12 圖描述組合後處理，其他 FSM 不變。原 quantizer/reserved/tag 波形路徑現在位於 postprocess 的 `g_pipeline` 分支。
+
 ## 1. 如何閱讀
 
 - 藍色方塊：RTL 中真正的 FSM 狀態或其模組。
@@ -210,7 +212,7 @@ pipeline 的 `slot_ready = !valid_q || out_ready` 允許同一上升緣「送出
 
 ## 13. 圖檔清單與再產生
 
-共 12 張圖，每張同時提供 `.dot`、`.svg`、`.png`，位於 [pe8_control_diagrams](pe8_control_diagrams/)。從 repository 根目錄使用 Graphviz：
+原圖集共 12 張圖（00～11），另有組合後處理擴充圖 12；每張同時提供 `.dot`、`.svg`、`.png`，位於 [pe8_control_diagrams](pe8_control_diagrams/)。從 repository 根目錄使用 Graphviz：
 
 ```bash
 for f in PE_COMPARISON/docs/pe8_control_diagrams/*.dot; do

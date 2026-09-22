@@ -2,6 +2,7 @@
 // Public-port integration: actual BRAM/loader/aligner/PE/result/FIFO path.
 module tb_pe_pot_engine;
     parameter bit PE8_MODE=1, RESULT_PIPELINED=0;
+    parameter bit POSTPROCESS_PIPELINED=1;
     logic clk=0,rst=1;
     always #4 clk=~clk;
     logic load_valid=0; wire load_ready;
@@ -15,7 +16,8 @@ module tb_pe_pot_engine;
     logic activation_valid=0; wire activation_ready; logic [7:0] activation_u8=0;
     wire out_valid; logic out_ready=0; wire [7:0] out_data;
     wire [4:0] out_channel_id; wire out_group_last,out_error;
-    pe_pot_engine #(.PE8_MODE(PE8_MODE),.RESULT_PIPELINED(RESULT_PIPELINED)) dut (.*);
+    pe_pot_engine #(.PE8_MODE(PE8_MODE),.RESULT_PIPELINED(RESULT_PIPELINED),
+        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
     integer layer=0,k_count=0,c_count=0,received=0,checked=0,cycles=0;
     integer final_stalls=0,stall_checks=0,jobs=0;
     logic check_enable=0,do_relu=0,held=0;
@@ -134,7 +136,7 @@ module tb_pe_pot_engine;
         run_layer(3,144,32,0);
         run_layer(5,1,1,0); // Unsupported ROM layer must propagate error and still drain.
         if(stall_checks<120) $fatal(1,"stall coverage missing");
-        $display("PASS pe_pot_engine PE8=%0d PIPE=%0d jobs=%0d outputs=%0d stalls=%0d",PE8_MODE,RESULT_PIPELINED,jobs,checked,stall_checks);
+        $display("PASS pe_pot_engine PE8=%0d PIPE=%0d POST_PIPE=%0d jobs=%0d outputs=%0d stalls=%0d",PE8_MODE,RESULT_PIPELINED,POSTPROCESS_PIPELINED,jobs,checked,stall_checks);
         $finish;
     end
 endmodule

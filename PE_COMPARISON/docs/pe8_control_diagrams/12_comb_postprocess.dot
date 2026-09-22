@@ -1,0 +1,28 @@
+digraph G {
+ graph [rankdir=TB, ranksep=0.8, nodesep=0.5, bgcolor="white", fontname="DejaVu Sans", labelloc=t,
+        label="Combinational PoT postprocessing + synchronous FIFO"];
+ node [shape=box, style="rounded,filled", fillcolor="#e8f1fc", fontname="DejaVu Sans"];
+ edge [fontname="DejaVu Sans", fontsize=10];
+ source [label="Result controller\nACC + channel + last\nHold while valid && !ready"];
+ math [label="Combinational: shift ROM -> round-even\n-> zp128/saturate -> optional ReLU\nNo clock / no arithmetic pipeline FF",fillcolor="#fff1d6"];
+ fifo [label="8 x 15-bit FIFO\nCapture UINT8 + channel/last/error\non push = in_valid && in_ready"];
+ sink [label="External consumer\npop = out_valid && out_ready"];
+ source -> math;
+ math -> fifo [label="capture at acceptance edge"];
+ fifo -> sink;
+ fifo -> source [label="in_ready = !rst && count < 8",style=dashed,constraint=false];
+ subgraph cluster_occupancy {
+   label="Conceptual occupancy, NOT an enum FSM";
+   empty [label="EMPTY: count=0\nin_ready=1, out_valid=0"];
+   partial [label="PARTIAL: count=1..7\nin_ready=1, out_valid=1"];
+   full [label="FULL: count=8\nin_ready=0, out_valid=1"];
+   empty:w -> partial:w [label="push"];
+   partial:e -> empty:e [label="count=1, pop only"];
+   partial:w -> full:w [label="count=7, push only"];
+   full:e -> partial:e [label="pop; no same-edge input bypass"];
+   partial -> partial [label="push + pop: hold count\notherwise +/-1, if still 1..7"];
+ }
+ fifo -> partial [style=dotted,label="occupancy control"];
+ reset [shape=note,label="rst: clear count and pointers\nall handshakes disabled\nFIFO payload need not be reset"];
+ reset -> empty [style=dashed];
+}

@@ -1,9 +1,11 @@
 `timescale 1ns/1ps
-module pe_board_test_case #(parameter integer VARIANT=0, parameter bit POT_MODEL=0)(output logic done=0);
+module pe_board_test_case #(parameter integer VARIANT=0, parameter bit POT_MODEL=0,
+    parameter bit POSTPROCESS_PIPELINED=1)(output logic done=0);
     logic clk=0, button=0;
     always #4 clk=~clk;
     wire [3:0] led;
-    pe_board_top #(.PE8_MODE(VARIANT!=0),.RESULT_PIPELINED(VARIANT==2),.POT_MODEL(POT_MODEL),.RELEASE_BITS(4)) dut (
+    pe_board_top #(.PE8_MODE(VARIANT!=0),.RESULT_PIPELINED(VARIANT==2),.POT_MODEL(POT_MODEL),
+        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED),.RELEASE_BITS(4)) dut (
         .sys_clk_125m(clk),.reset_button(button),.led(led)
     );
     integer checks=0;
@@ -57,18 +59,20 @@ module pe_board_test_case #(parameter integer VARIANT=0, parameter bit POT_MODEL
         checks=0; rerun();
         wait(led[2]);
         if(dut.checked_outputs!=52 || checks!=52) $fatal(1,"rerun failed");
-        $display("PASS board variant=%0d POT=%0d two complete suites, reset/bounce, 104 outputs",VARIANT,POT_MODEL);
+        $display("PASS board variant=%0d POT=%0d POST_PIPE=%0d two complete suites, reset/bounce, 104 outputs",VARIANT,POT_MODEL,POSTPROCESS_PIPELINED);
         done=1;
     end
 endmodule
 module tb_pe_board;
-    wire [5:0] done;
+    wire [7:0] done;
     pe_board_test_case #(.VARIANT(0)) case_pe9(done[0]);
     pe_board_test_case #(.VARIANT(1)) case_pe8(done[1]);
     pe_board_test_case #(.VARIANT(2)) case_pipe(done[2]);
     pe_board_test_case #(.VARIANT(0),.POT_MODEL(1)) case_pe9_pot(done[3]);
     pe_board_test_case #(.VARIANT(1),.POT_MODEL(1)) case_pe8_pot(done[4]);
     pe_board_test_case #(.VARIANT(2),.POT_MODEL(1)) case_pipe_pot(done[5]);
+    pe_board_test_case #(.VARIANT(1),.POT_MODEL(1),.POSTPROCESS_PIPELINED(0)) case_pe8_comb(done[6]);
+    pe_board_test_case #(.VARIANT(2),.POT_MODEL(1),.POSTPROCESS_PIPELINED(0)) case_pipe_comb(done[7]);
     logic clk=0, rst=1;
     always #4 clk=~clk;
     wire busy, pass, fail;

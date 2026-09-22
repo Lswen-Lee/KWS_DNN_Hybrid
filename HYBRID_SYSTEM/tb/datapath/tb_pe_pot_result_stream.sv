@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 module tb_pe_pot_result_stream;
+    parameter bit POSTPROCESS_PIPELINED=1;
     logic clk=0,rst=1; always #4 clk=~clk;
     logic in_valid=0; wire in_ready;
     logic signed [31:0] accumulator=0;
@@ -8,10 +9,12 @@ module tb_pe_pot_result_stream;
     wire out_valid; logic out_ready=0;
     wire [7:0] output_uint8; wire [4:0] out_channel_id;
     wire out_last,out_error;
-    pe_pot_result_stream dut (.*);
+    pe_pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
     logic [14:0] expected[0:2047],held_payload;
     integer sent=0,received=0,checks=0,cycles=0,full_cycles=0;
     logic held=0,drain=0;
+    logic force_stall=1;
+    integer simultaneous=0,max_pending=0,full_pop=0;
     function automatic integer model_k(input integer l,c);
         case(l)
             0: return c<12 ? ((c==0 || c==4 || c==10) ? 8 : 9) : -1;
@@ -35,13 +38,15 @@ module tb_pe_pot_result_stream;
         return 8'(q);
     endfunction
     always @(negedge clk) begin
-        #1; out_ready=drain || cycles%43>=24;
+        #1; out_ready=!force_stall && (drain || cycles%43>=24);
     end
     always @(posedge clk) begin : scoreboard
         integer k;
         cycles++;
         if(rst) begin sent=0; received=0; held=0; end
         else begin
+            if(in_ready !== (sent-received<8)) $fatal(1,"capacity/ready policy mismatch");
+            if(sent-received==8 && out_valid && out_ready) full_pop++;
             if(held && (!out_valid || held_payload!=={out_error,out_last,out_channel_id,output_uint8}))
                 $fatal(1,"FIFO payload changed while stalled");
             held=out_valid && !out_ready;
@@ -57,6 +62,9 @@ module tb_pe_pot_result_stream;
                     $fatal(1,"stream mismatch received=%0d",received);
                 received++; checks++;
             end
+            if(in_valid && in_ready && out_valid && out_ready) simultaneous++;
+            if(sent-received>max_pending) max_pending=sent-received;
+            if(sent-received>8) $fatal(1,"more than eight outstanding transactions");
         end
         if(cycles>15000) $fatal(1,"timeout");
     end
@@ -69,17 +77,32 @@ module tb_pe_pot_result_stream;
     endtask
     initial begin
         repeat(4) @(negedge clk); rst=0;
+        // E0 accepts first input. Comb captures directly into FIFO at E0;
+        // original pipeline must not yet expose an output at this edge.
+        send(0); #1;
+        if(out_valid !== !POSTPROCESS_PIPELINED) $fatal(1,"first output latency mismatch");
+        for(integer i=1;i<8;i++) send(i);
+        @(negedge clk); in_valid=0;
+        repeat(8) @(negedge clk);
+        if(in_ready || !out_valid || sent!=8 || received!=0) $fatal(1,"full FIFO test failed");
+        // Reset full FIFO: no accepted pre-reset result may leak out.
+        rst=1;
+        repeat(3) @(negedge clk); rst=0;
+        repeat(3) @(negedge clk);
+        if(out_valid || !in_ready) $fatal(1,"full FIFO reset failed");
         // Leave accepted items in-flight and reset: no stale outputs may survive.
         send(0); send(1);
         @(negedge clk); rst=1; in_valid=0;
         repeat(3) @(negedge clk); rst=0;
         repeat(8) @(negedge clk);
         if(out_valid) $fatal(1,"stale output after reset");
+        force_stall=0;
         for(integer i=0;i<768;i++) send(i%256);
         @(negedge clk); in_valid=0; drain=1;
         wait(received==sent); repeat(6) @(negedge clk);
-        if(sent!=768 || full_cycles==0 || out_valid) $fatal(1,"coverage/drain failed");
-        $display("PASS PoT stream 768 outputs, all 256 ROM addresses, errors, mixed tags, FIFO full, reset; checked=%0d",checks);
+        if(sent!=768 || full_cycles==0 || out_valid || simultaneous==0 || max_pending!=8 || full_pop==0)
+            $fatal(1,"coverage/drain failed");
+        $display("PASS PoT stream POST_PIPE=%0d 768 outputs, all 256 ROM addresses, errors, mixed tags, full/reset/latency; checked=%0d simultaneous=%0d full_pop=%0d",POSTPROCESS_PIPELINED,checks,simultaneous,full_pop);
         $finish;
     end
 endmodule

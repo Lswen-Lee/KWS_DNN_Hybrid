@@ -7,13 +7,14 @@ BUILD_DIR := build
 RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
-POT_RTL := $(RTL_DATAPATH)/requantizer_int32_to_uint8_pot.sv
+POT_RTL := $(RTL_DATAPATH)/requantizer_int32_to_uint8_pot.sv $(RTL_DATAPATH)/requantizer_int32_to_uint8_pot_comb.sv
 POT_TB := $(TB_DATAPATH)/tb_requantizer_int32_to_uint8_pot.sv
 .PHONY: lint-requantizer-pot build-requantizer-pot test-requantizer-pot test-requantizer-pot-exports
 test: test-requantizer-pot
 lint: lint-requantizer-pot
 lint-requantizer-pot:
 	$(VERILATOR) --lint-only -Wall --top-module requantizer_int32_to_uint8_pot $(POT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module requantizer_int32_to_uint8_pot_comb $(POT_RTL)
 build-requantizer-pot: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_requantizer_int32_to_uint8_pot -Mdir $(BUILD_DIR)/requantizer_pot $(POT_RTL) $(POT_TB)
 test-requantizer-pot: build-requantizer-pot
@@ -43,8 +44,10 @@ POT_ENGINE_RTL = $(ENGINE_RTL) $(POT_STREAM_RTL) rtl/integration/pe_pot_engine.s
 test: test-memory-engine-zp128 test-pot-engine test-pot-stream test-postprocess-pot test-dcim-offset check-engine-elaboration-zp128
 .PHONY: test-pot-stream test-postprocess-pot test-dcim-offset
 test-pot-stream: | $(BUILD_DIR)
-	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_pe_pot_result_stream -Mdir $(BUILD_DIR)/pot_stream $(POT_STREAM_RTL) tb/datapath/tb_pe_pot_result_stream.sv
-	$(BUILD_DIR)/pot_stream/Vtb_pe_pot_result_stream
+	@for post in 0 1; do \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_pot_result_stream -Mdir $(BUILD_DIR)/pot_stream_$$post $(POT_STREAM_RTL) tb/datapath/tb_pe_pot_result_stream.sv && \
+		$(BUILD_DIR)/pot_stream_$$post/Vtb_pe_pot_result_stream || exit $$?; \
+	done
 test-postprocess-pot: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_kws_postprocess_pot -Mdir $(BUILD_DIR)/postprocess_pot $(POT_RTL) $(addprefix rtl/datapath/,relu_uint8_zp127.sv maxpool2x2_uint8.sv kws_postprocess_pot.sv) tb/datapath/tb_kws_postprocess_pot.sv
 	$(BUILD_DIR)/postprocess_pot/Vtb_kws_postprocess_pot
@@ -52,9 +55,10 @@ test-dcim-offset: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_dcim_u8_offset_correction -Mdir $(BUILD_DIR)/dcim_offset rtl/dcim_adapter/dcim_u8_offset_correction.sv tb/datapath/tb_dcim_u8_offset_correction.sv
 	$(BUILD_DIR)/dcim_offset/Vtb_dcim_u8_offset_correction
 test-pot-engine: | $(BUILD_DIR)
-	@for cfg in 0_0 1_0 1_1; do mode=$${cfg%_*}; pipe=$${cfg#*_}; \
-		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL "-GPE8_MODE=1'b$$mode" "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_pe_pot_engine -Mdir $(BUILD_DIR)/pot_engine_$$cfg $(POT_ENGINE_RTL) tb/integration/tb_pe_pot_engine.sv && \
-		$(BUILD_DIR)/pot_engine_$$cfg/Vtb_pe_pot_engine || exit $$?; \
+	@for post in 0 1; do for cfg in 0_0 1_0 1_1; do mode=$${cfg%_*}; pipe=$${cfg#*_}; \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL "-GPE8_MODE=1'b$$mode" "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_pot_engine -Mdir $(BUILD_DIR)/pot_engine_$${cfg}_post$$post $(POT_ENGINE_RTL) tb/integration/tb_pe_pot_engine.sv && \
+		$(BUILD_DIR)/pot_engine_$${cfg}_post$$post/Vtb_pe_pot_engine || exit $$?; \
+	done; \
 	done
 .PHONY: test-memory-engine-zp128
 .PHONY: check-engine-elaboration-zp128

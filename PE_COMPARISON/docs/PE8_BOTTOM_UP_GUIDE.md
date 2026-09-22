@@ -2,6 +2,8 @@
 
 範圍：目前 zp128／PoT 的兩個板級 top。本文改變閱讀方向，不改變 RTL。完整轉移條件圖可搭配 [控制狀態圖集](PE8_CONTROL_STATE_ATLAS.md)。
 
+本篇後處理說明以預設 `POSTPROCESS_PIPELINED=1` 為準；新增的組合後處理選項與外部時序差異見 [組合後處理設計](../../HYBRID_SYSTEM/docs/PE_COMBINATIONAL_POSTPROCESS.md)。
+
 閱讀原則：**先理解一個 MAC 如何完成一筆乘加，再理解誰餵資料、誰收結果，最後理解誰指揮整組與整個工作。** Bottom-up 是由小元件組成大元件的閱讀順序，不是開機後的時間順序；真正執行仍然必須先載入權重。
 
 ## 1. 最小計算單位：一個 pe8_mac_lane

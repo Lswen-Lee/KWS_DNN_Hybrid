@@ -6,6 +6,10 @@ module tb_requantizer_int32_to_uint8_pot;
     wire out_valid;
     wire [7:0] output_uint8;
     requantizer_int32_to_uint8_pot dut (.*);
+    wire [7:0] comb_uint8;
+    requantizer_int32_to_uint8_pot_comb comb_dut (
+        .accumulator(accumulator),.shift_amount(shift_amount),.output_uint8(comb_uint8)
+    );
     always #4 clk=~clk;
 
     // Independent sign/magnitude, division/modulo reference (no DUT internals).
@@ -31,6 +35,9 @@ module tb_requantizer_int32_to_uint8_pot;
     logic external_golden=0;
     integer checked=0, exported=0;
     always @(posedge clk) begin
+        if(!rst && in_valid && comb_uint8 !==
+            (external_golden ? supplied_golden : reference_value(accumulator,integer'(shift_amount))))
+            $fatal(1,"combinational quantizer mismatch ACC=%0d shift=%0d",accumulator,shift_amount);
         if(rst) expected_valid=0;
         else begin
             expected_valid={expected_valid[1:0],in_valid};
@@ -102,7 +109,7 @@ module tb_requantizer_int32_to_uint8_pot;
         repeat(5) send(0,0,0);
         @(negedge clk);
         if(out_valid) $fatal(1,"pipeline failed to drain");
-        $display("PASS PoT requantizer: checked=%0d exported=%0d shifts=0..31 ties/saturation/bubbles/reset",checked,exported);
+        $display("PASS PoT pipeline + combinational requantizers: checked=%0d exported=%0d shifts=0..31 ties/saturation/bubbles/reset",checked,exported);
         $finish;
     end
     initial begin #3000000; $fatal(1,"timeout"); end
