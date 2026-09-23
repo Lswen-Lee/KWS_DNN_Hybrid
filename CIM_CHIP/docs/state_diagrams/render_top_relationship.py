@@ -93,4 +93,6 @@ text(65,1042,'圖例：藍色實線＝命令／資料　綠色虛線＝50 MHz �
 out=Path(__file__).resolve().parent
 for ext in ('png','svg'):
     fig.savefig(out/f'dcim_top_relationship_16x9.{ext}',dpi=100,facecolor='white')
+svg = out/'dcim_top_relationship_16x9.svg'
+svg.write_text('\n'.join(line.rstrip() for line in svg.read_text().splitlines())+'\n')
 plt.close(fig)

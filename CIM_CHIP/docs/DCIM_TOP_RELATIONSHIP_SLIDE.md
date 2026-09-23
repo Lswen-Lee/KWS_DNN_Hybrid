@@ -23,7 +23,7 @@
 - Burst 是另一組資料握手：master 提供請求位址，self_test 依位址產生 weight；有效傳輸需 valid && ready。命令介面則是 IDLE 接受 start，並非通用 ready/valid 命令介面。
 - sume/sumo 每路每拍一 bit 是結果接收階段的行為，不表示所有狀態都在輸出有效結果；SRAM read 使用 sumo。
 - 此板級自測為 2048-byte burst、2048 次 read、Group0/Pair0 一次 A8W8，不是完整 CNN，也不是所有 group/pair 的 CIM 覆蓋。
-- 图中為合成硬體的時脈架構；Verilator 下 clock generator 是 bypass，TB 直接提供 50 MHz，不驗證 MMCM 電性。
+- 圖中為合成硬體的時脈架構；Verilator 下 clock generator 是 bypass，TB 直接提供 50 MHz，不驗證 MMCM 電性。
 
 ## 重繪及驗證
 
