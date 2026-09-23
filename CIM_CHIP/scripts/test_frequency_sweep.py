@@ -62,12 +62,12 @@ try:
         }
         proc get_property {name object} {
             if {$name eq "PERIOD"} {
-                if {$::bad_clock && $::mhz == 65} {return 20.0}
+                if {$::bad_clock && $::mhz == 54} {return 20.0}
                 return [expr {1000.0/$::mhz}]
             }
             if {$name eq "SLACK"} {
                 if {$object eq "hold"} {return 0.10}
-                return [expr {$::mhz == 60 ? -0.25 : 0.50}]
+                return [expr {$::mhz == 53 ? -0.25 : 0.50}]
             }
             error "Unexpected property $name"
         }
@@ -90,13 +90,15 @@ try:
         destination = Path(temp) / "all"
         script = ROOT / "vivado/sweep_dcim_frequency.tcl"
         run(f'set dcim_sweep_root {{{destination}}}; source {{{script}}}')
-        assert run('set synth_count') == '6'
-        assert run('set route_count') == '6'
+        assert run('set synth_count') == '7'
+        assert run('set route_count') == '7'
         rows = collect(destination)
-        assert len(rows) == 12
+        assert len(rows) == 14
         assert all(r['top_lut'] == 20000 and r['top_ff'] == 16624 for r in rows)
-        assert all(r['setup_hold_status'] == ('FAIL' if r['frequency_mhz'] == 60 else 'PASS') for r in rows)
-        expected = {40: (8, 25), 45: (9, 25), 50: (8, 20), 55: (5.5, 12.5), 60: (6, 12.5), 65: (6.5, 12.5)}
+        assert all(r['setup_hold_status'] == ('FAIL' if r['frequency_mhz'] == 53 else 'PASS') for r in rows)
+        expected = {45: (9, 25), 50: (8, 20), 51: (6.375, 15.625),
+                    52: (6.5, 15.625), 53: (6.625, 15.625),
+                    54: (6.75, 15.625), 55: (5.5, 12.5)}
         import re
         for mhz, (mult, divide) in expected.items():
             text = (destination / f'f{mhz}/dcim_clock_gen_125_to_50.sv').read_text()
@@ -113,19 +115,19 @@ try:
         assert 'Output already exists' in run(f'source {{{script}}}', error=True)
         run('set opened 1')
         assert 'Close the current project' in run(f'source {{{script}}}', error=True)
-        run('set opened 0; set dcim_sweep_frequencies {40 40}')
+        run('set opened 0; set dcim_sweep_frequencies {45 45}')
         assert 'Duplicate' in run(f'source {{{script}}}', error=True)
         run('set dcim_sweep_frequencies {75}')
         assert 'Unsupported' in run(f'source {{{script}}}', error=True)
         # Failure must not prevent later frequencies; bad generated clock must fail.
         failed = Path(temp) / 'failure'
-        run(f'set dcim_sweep_root {{{failed}}}; set dcim_sweep_frequencies {{55 60 65}}; set fault 1; set bad_clock 1; source {{{script}}}')
+        run(f'set dcim_sweep_root {{{failed}}}; set dcim_sweep_frequencies {{55 53 54}}; set fault 1; set bad_clock 1; source {{{script}}}')
         assert (failed / 'f55/status.txt').read_text().startswith('ERROR')
-        assert (failed / 'f60/status.txt').read_text().startswith('COMPLETE')
-        assert 'Wrong core period' in (failed / 'f65/status.txt').read_text()
+        assert (failed / 'f53/status.txt').read_text().startswith('COMPLETE')
+        assert 'Wrong core period' in (failed / 'f54/status.txt').read_text()
         failed_rows = collect(failed)
-        assert all(r['setup_hold_status'] == 'UNKNOWN' for r in failed_rows if r['frequency_mhz'] in (55, 65))
-        assert all('top_lut' not in r for r in failed_rows if r['frequency_mhz'] in (55, 65))
+        assert all(r['setup_hold_status'] == 'UNKNOWN' for r in failed_rows if r['frequency_mhz'] in (55, 54))
+        assert all('top_lut' not in r for r in failed_rows if r['frequency_mhz'] in (55, 54))
         broken = Path(temp) / 'broken.rpt'
         broken.write_text('| LUT as Logic | 1 |\n')
         try:
@@ -134,6 +136,6 @@ try:
         except ValueError:
             pass
     assert all(hashlib.sha256(p.read_bytes()).digest() == digest for p, digest in originals.items())
-    print('PASS: six frequencies, real Tcl control flow/mock Vivado, snapshot isolation, no OOC/overwrite, clock guard, failure continuation, actual-format parser and synthetic plots. No Vivado synthesis performed.')
+    print('PASS: seven frequencies, real Tcl control flow/mock Vivado, snapshot isolation, no OOC/overwrite, clock guard, failure continuation, actual-format parser and synthetic plots. No Vivado synthesis performed.')
 finally:
     lib.Tcl_DeleteInterp(interp)

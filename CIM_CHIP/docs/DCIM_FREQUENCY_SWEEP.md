@@ -1,4 +1,6 @@
-# CIM 板級自動掃頻：40／45／50／55／60／65 MHz
+# CIM 板級自動掃頻：45／50／51／52／53／54／55 MHz
+
+目前預設及支援清單均為上述七組；不會執行 40／60／65 MHz。舊 run01 的六頻率實測結果請參考 `DCIM_SWEEP_RUN01_RESULTS.md`，本次範例使用新的 `run02` 目錄，不覆寫 run01。若 Vivado Console 留有舊變數，請明確重新設定下列頻率清單。
 
 ## 比較的範圍
 
@@ -6,12 +8,13 @@
 
 ```text
 相同 RTL／XDC 快照
-  ├─40 MHz ─ synthesis ─ place/route ─ reports／DCP
   ├─45 MHz ─ synthesis ─ place/route ─ reports／DCP
   ├─50 MHz ─ synthesis ─ place/route ─ reports／DCP
-  ├─55 MHz ─ synthesis ─ place/route ─ reports／DCP
-  ├─60 MHz ─ synthesis ─ place/route ─ reports／DCP
-  └─65 MHz ─ synthesis ─ place/route ─ reports／DCP
+  ├─51 MHz ─ synthesis ─ place/route ─ reports／DCP
+  ├─52 MHz ─ synthesis ─ place/route ─ reports／DCP
+  ├─53 MHz ─ synthesis ─ place/route ─ reports／DCP
+  ├─54 MHz ─ synthesis ─ place/route ─ reports／DCP
+  └─55 MHz ─ synthesis ─ place/route ─ reports／DCP
                          ↓
             CSV＋Markdown＋LUT／FF–MHz 圖
 ```
@@ -24,12 +27,15 @@
 
 | MHz | M | O | VCO MHz | 輸出週期 ns |
 |---:|---:|---:|---:|---:|
-|40|8|25|1000|25.000|
 |45|9|25|1125|22.222|
 |50|8|20|1000|20.000|
+|51|6.375|15.625|796.875|19.608|
+|52|6.5|15.625|812.5|19.231|
+|53|6.625|15.625|828.125|18.868|
+|54|6.75|15.625|843.75|18.519|
 |55|5.5|12.5|687.5|18.182|
-|60|6|12.5|750|16.667|
-|65|6.5|12.5|812.5|15.385|
+
+45／50／55 MHz 保留前次相同 MMCM 設定。51～54 MHz 採 0.125 步進的 fractional multiplier／divider，頻率計算為精確目標值；實際 clock period 與 MMCM DRC 仍由 Vivado 檢查。
 
 MMCM 的合法性仍由 Vivado 器件檢查確認。各頻率的 VCO／fractional divider 不同，jitter／clock uncertainty 可能跟著改變；實驗是在比較可實現的板級時脈配置，不是假設時脈理想且完全相同。時脈檔中舊 `50m` 名稱仍保留，實際頻率由參數與 `report_clocks` 判定。
 
@@ -39,8 +45,8 @@ MMCM 的合法性仍由 Vivado 器件檢查確認。各頻率的 VCO／fractiona
 
 ```tcl
 # 在沒有開啟專案的 Vivado Tcl Console 執行
-set dcim_sweep_root {C:/dcim_sweep/run01}
-set dcim_sweep_frequencies {40 45 50 55 60 65}
+set dcim_sweep_root {C:/dcim_sweep/run02}
+set dcim_sweep_frequencies {45 50 51 52 53 54 55}
 # Windows 可使用 python，或設定為 {py -3} / {C:/Python311/python.exe}
 set dcim_sweep_python {py -3}
 source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/vivado/sweep_dcim_frequency.tcl}
@@ -49,18 +55,18 @@ source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/v
 若想放在原資料夾，可將 root 改成：
 
 ```tcl
-set dcim_sweep_root {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/build/frequency_sweep/run01}
+set dcim_sweep_root {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/build/frequency_sweep/run02}
 ```
 
 較推薦短路徑。腳本會同步等待每一頻率完成，GUI 可能較不方便操作；也可在 Vivado Command Prompt 執行：
 
 ```bat
-vivado -mode batch -source C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/vivado/sweep_dcim_frequency.tcl -tclargs C:/dcim_sweep/run01
+vivado -mode batch -source C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/vivado/sweep_dcim_frequency.tcl -tclargs C:/dcim_sweep/run02
 ```
 
 這是自動 non-project 流程（**non-project 不等於 OOC**），不建立 XPR，不使用 runs/hook，也不產生 bitstream。建立完整 input 快照與 synthesis／routed DCP，避免舊專案設定污染比較。相同 flow／四個 threads，每輪都是新的 in-memory project，正常 `synth_design → opt_design → place_design → phys_opt_design → route_design`。
 
-已有目錄會拒絕執行，不刪除或覆寫舊結果；重做請改 run02。單輪失敗寫入 status.txt 後繼續其餘頻率。原始 RTL（包括使用者已改為 75 MHz 的時脈檔）不會被修改。
+已有目錄會拒絕執行，不刪除或覆寫舊結果；若 run02 已存在，請改 run03。單輪失敗寫入 status.txt 後繼續其餘頻率。原始 RTL（包括使用者已改為 75 MHz 的時脈檔）不會被修改。
 
 ## 彙整及繪圖
 
@@ -73,19 +79,19 @@ py -3 -m pip install matplotlib
 腳本最後自動呼叫 Python。如果環境找不到 Python 或 matplotlib，Vivado 報告仍保留；可另行執行：
 
 ```bat
-py -3 C:/dcim_sweep/run01/summarize_dcim_sweep.py C:/dcim_sweep/run01
+py -3 C:/dcim_sweep/run02/summarize_dcim_sweep.py C:/dcim_sweep/run02
 ```
 
 也可從 Docker 對可見的同一結果資料夾執行 `python3 .../summarize_dcim_sweep.py <結果資料夾>`。不安裝 matplotlib 時加 `--no-plot` 仍可取得 CSV 與 Markdown。不要把 Docker 路徑直接貼到 Windows Vivado。
 
 ```text
-run01/
+run02/
   snapshot/                 原始 RTL／XDC 快照
   experiment.txt            Vivado 版本、器件、流程
   source_manifest.txt
   sweep_script.tcl          本次腳本快照
   summarize_dcim_sweep.py
-  f40/ ... f65/
+  f45/ f50/ f51/ f52/ f53/ f54/ f55/
     configuration.txt       MMCM 設定
     status.txt              COMPLETE 或 ERROR＋錯誤原因
     synthesized.dcp
@@ -107,20 +113,20 @@ run01/
 還必須檢查 pulse width、未限制路徑、DRC、route status、methodology。此流程沿用既有 XDC，不新增 false path 或放寬限制來隱藏失敗。按鍵／LED 的 I/O 時序警告需依板級非同步介面另行審核，不能將所有警告視為可忽略。
 
 ```tcl
-open_checkpoint {C:/dcim_sweep/run01/f65/routed.dcp}
+open_checkpoint {C:/dcim_sweep/run02/f55/routed.dcp}
 report_clocks
 report_timing_summary -delay_type min_max -report_unconstrained
 report_timing -delay_type max -max_paths 10
 ```
 
-65 MHz 通過只代表所測點通過，不能宣布它是最高頻率。若臨界路徑屬 self test 或 master，也不能直接宣布是 macro 的速度上限。單次布局結果適合初步比較，研究結論建議另做重複實驗／更細頻率點，並保留相同工具版本與來源快照。
+55 MHz 通過只代表所測點通過，不能宣布它是最高頻率。若臨界路徑屬 self test 或 master，也不能直接宣布是 macro 的速度上限。單次布局結果適合初步比較，研究結論建議另做重複實驗／更細頻率點，並保留相同工具版本與來源快照。
 
 ## 本次驗證範圍
 
-`python3 CIM_CHIP/scripts/test_frequency_sweep.py`：以 Tcl interpreter＋Vivado API mock 執行真正掃頻腳本，檢查六組頻率副本、非 OOC、各輪隔離、錯誤後繼續、禁止覆寫與錯誤 clock guard；以合成測試報表檢查彙整／缺失值／失敗標記和出圖。測試資料不是 FPGA 實測數據。
+`python3 CIM_CHIP/scripts/test_frequency_sweep.py`：以 Tcl interpreter＋Vivado API mock 執行真正掃頻腳本，檢查七組頻率副本、非 OOC、各輪隔離、錯誤後繼續、禁止覆寫與錯誤 clock guard；以合成測試報表檢查彙整／缺失值／失敗標記和出圖。測試資料不是 FPGA 實測數據。
 
-Docker 無 Vivado，**尚未執行六組真實合成／布局繞線，亦尚無真實 LUT–MHz 分布圖**。請在 Windows 執行後再根據實際報告比較。
+Docker 無 Vivado，**本次尚未執行七組真實合成／布局繞線**。舊六組實測報告已整理；新增 51～54 MHz 的真實結果仍須在 Windows 執行後取得。
 
-已通過上述腳本回歸；亦已使用目前資料夾中的 5 份真實 utilization 報告交叉確認 LUT／FF 解析格式。這不等於完成六組掃頻。RTL 沒有變更，因此本次未重新執行功能模擬。
+已通過上述七組腳本回歸；報表解析器沿用已驗證流程。這不等於完成七組真實掃頻。RTL 沒有變更，因此本次未重新執行功能模擬。
 
 參考 AMD Vivado 2023.2：[Non-Project 流程與 DCP](https://docs.amd.com/r/2023.2-English/ug892-vivado-design-flows-overview/Opening-Design-Checkpoints-in-the-Vivado-IDE)、[synth_design](https://docs.amd.com/r/2023.2-English/ug835-vivado-tcl-commands/synth_design)。

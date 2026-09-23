@@ -6,10 +6,11 @@
 set ds_script_dir [file dirname [file normalize [info script]]]
 set ds_root [file dirname $ds_script_dir]
 if {[llength [get_projects -quiet]]} {error "Close the current project before running the sweep."}
-if {![info exists dcim_sweep_frequencies]} {set dcim_sweep_frequencies {40 45 50 55 60 65}}
+if {![info exists dcim_sweep_frequencies]} {set dcim_sweep_frequencies {45 50 51 52 53 54 55}}
 # frequency -> {feedback multiplier output divider}; input divider is always 1.
-set ds_settings [dict create 40 {8.000 25.000} 45 {9.000 25.000} \
-    50 {8.000 20.000} 55 {5.500 12.500} 60 {6.000 12.500} 65 {6.500 12.500}]
+set ds_settings [dict create 45 {9.000 25.000} 50 {8.000 20.000} \
+    51 {6.375 15.625} 52 {6.500 15.625} 53 {6.625 15.625} \
+    54 {6.750 15.625} 55 {5.500 12.500}]
 if {![llength $dcim_sweep_frequencies]} {error "Empty frequency list"}
 foreach mhz $dcim_sweep_frequencies {
     if {![dict exists $ds_settings $mhz]} {error "Unsupported MHz: $mhz; supported: [dict keys $ds_settings]"}
