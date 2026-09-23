@@ -99,6 +99,35 @@ def summarize(root, plot=True):
             for suffix in ("png", "svg"):
                 fig.savefig(root / f"{resource}_vs_mhz.{suffix}", dpi=180)
             plt.close(fig)
+        # Separate scales make small LUT differences visible without putting
+        # the much smaller controller area on the same axis as the macro.
+        fig, axes = plt.subplots(2, 2, figsize=(16, 9), layout="constrained")
+        for ax, key, title in zip(axes.flat,
+                ("top_lut", "macro_lut", "top_ff", "wns_ns"),
+                ("Board top LUT (zoomed axis)", "CIM macro LUT (zoomed axis)",
+                 "Board top FF", "Worst setup slack (WNS)")):
+            available = [r for r in routed if key in r]
+            ax.plot([r["frequency_mhz"] for r in available], [r[key] for r in available], color="#64748b")
+            for row in available:
+                passed = row["run_status"] == "COMPLETE" and row["setup_hold_status"] == "PASS"
+                ax.scatter(row["frequency_mhz"], row[key], marker="o" if passed else "x",
+                           color="#15803d" if passed else "#dc2626", s=70, zorder=3)
+                label = f'{row[key]:+.3f}' if key == "wns_ns" else f'{row[key]:,}'
+                ax.annotate(label, (row["frequency_mhz"], row[key]), xytext=(0, 12),
+                            textcoords="offset points", ha="center", fontsize=10)
+            ax.set(title=title, xlabel="Core frequency (MHz)", ylabel="ns" if key == "wns_ns" else "Count")
+            ax.set_xticks([r["frequency_mhz"] for r in routed])
+            ax.grid(alpha=.25)
+            ax.ticklabel_format(axis="y", style="plain", useOffset=False)
+            ax.margins(x=.10, y=.30)
+            if key == "top_ff" and available:
+                ax.set_ylim(0, max(1, max(r[key] for r in available)) * 1.25)
+            if key == "wns_ns":
+                ax.axhline(0, color="#0f172a", linestyle="--", linewidth=1)
+        fig.suptitle("DCIM frequency sweep | post-route measured reports\nGreen circle: setup/hold pass; red cross: fail/incomplete. Not full sign-off.", fontsize=17)
+        for suffix in ("png", "svg"):
+            fig.savefig(root / f"frequency_overview.{suffix}", dpi=160)
+        plt.close(fig)
     print(f"Saved summary.csv, SUMMARY.md{' and LUT/FF plots' if plot else ''}: {root}")
     return rows
 

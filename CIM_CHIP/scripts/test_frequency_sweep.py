@@ -108,7 +108,7 @@ try:
             assert m*8 == int(m*8) and d*8 == int(d*8)
         # Plot with synthetic fixtures into a temporary directory only.
         summarize(destination)
-        for name in ('summary.csv', 'SUMMARY.md', 'lut_vs_mhz.png', 'ff_vs_mhz.svg'):
+        for name in ('summary.csv', 'SUMMARY.md', 'lut_vs_mhz.png', 'ff_vs_mhz.svg', 'frequency_overview.png', 'frequency_overview.svg'):
             assert (destination / name).stat().st_size > 100
         assert 'Output already exists' in run(f'source {{{script}}}', error=True)
         run('set opened 1')
