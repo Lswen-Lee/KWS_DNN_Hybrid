@@ -34,6 +34,7 @@ try:
         set bad_clock 0
         set synth_count 0
         set route_count 0
+        set phys_count 0
         proc get_projects {args} {if {$::opened} {return project}; return {}}
         proc create_project {args} {set ::opened 1}
         proc close_project {} {set ::opened 0}
@@ -51,7 +52,11 @@ try:
             incr ::synth_count
             if {$::fault && $::mhz == 55} {error "Injected synthesis failure"}
         }
-        foreach command {opt_design place_design phys_opt_design} {proc $command {} {}}
+        foreach command {opt_design place_design} {proc $command {} {}}
+        proc phys_opt_design {args} {
+            if {$args ne {-directive AggressiveFanoutOpt}} {error "Wrong physical optimization directive"}
+            incr ::phys_count
+        }
         proc route_design {} {incr ::route_count}
         proc write_checkpoint {path} {ds_write $path "MOCK checkpoint"}
         proc get_pins {args} {return u_clock_gen/u_output_buffer/O}
@@ -92,6 +97,8 @@ try:
         run(f'set dcim_sweep_root {{{destination}}}; source {{{script}}}')
         assert run('set synth_count') == '7'
         assert run('set route_count') == '7'
+        assert run('set phys_count') == '7'
+        assert 'phys_opt_design -directive AggressiveFanoutOpt / route_design' in (destination / 'experiment.txt').read_text()
         rows = collect(destination)
         assert len(rows) == 14
         assert all(r['top_lut'] == 20000 and r['top_ff'] == 16624 for r in rows)

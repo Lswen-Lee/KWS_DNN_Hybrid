@@ -87,7 +87,7 @@ foreach folder {cell segment peripheral array chip fpga} {
 set ds_xdc [file join $ds_snapshot board.xdc]
 file copy [file join $ds_root constraints dcim_master_chip_top_pynq_z2.xdc] $ds_xdc
 ds_write [file join $dcim_sweep_root source_manifest.txt] [join $ds_sources \n]
-ds_write [file join $dcim_sweep_root experiment.txt] "Vivado: [version -short]\nPart: xc7z020clg400-1\nTop: dcim_master_chip_top\nFrequencies: $dcim_sweep_frequencies\nFlow: normal synth_design / opt_design / place_design / phys_opt_design / route_design\nFlatten: rebuilt; threads: 4; input clock: 125 MHz\nXDC: frozen existing board constraints; no added timing exceptions\n"
+ds_write [file join $dcim_sweep_root experiment.txt] "Vivado: [version -short]\nPart: xc7z020clg400-1\nTop: dcim_master_chip_top\nFrequencies: $dcim_sweep_frequencies\nFlow: normal synth_design / opt_design / place_design / phys_opt_design -directive AggressiveFanoutOpt / route_design\nFlatten: rebuilt; threads: 4; input clock: 125 MHz\nXDC: frozen existing board constraints; no added timing exceptions\nRTL attributes including DONT_TOUCH: inherited unchanged from snapshot; inspect snapshot/fpga/dcim_master_chip_top.sv\n"
 file copy [info script] [file join $dcim_sweep_root sweep_script.tcl]
 file copy [file join $ds_root scripts summarize_dcim_sweep.py] [file join $dcim_sweep_root summarize_dcim_sweep.py]
 set_param general.maxThreads 4
@@ -109,7 +109,7 @@ foreach mhz $dcim_sweep_frequencies {
         ds_reports $run_dir post_synth $mhz
         opt_design
         place_design
-        phys_opt_design
+        phys_opt_design -directive AggressiveFanoutOpt
         route_design
         write_checkpoint [file join $run_dir routed.dcp]
         ds_reports $run_dir post_route $mhz

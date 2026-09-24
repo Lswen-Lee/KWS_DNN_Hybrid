@@ -64,7 +64,24 @@ set dcim_sweep_root {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybr
 vivado -mode batch -source C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/vivado/sweep_dcim_frequency.tcl -tclargs C:/dcim_sweep/run02
 ```
 
-這是自動 non-project 流程（**non-project 不等於 OOC**），不建立 XPR，不使用 runs/hook，也不產生 bitstream。建立完整 input 快照與 synthesis／routed DCP，避免舊專案設定污染比較。相同 flow／四個 threads，每輪都是新的 in-memory project，正常 `synth_design → opt_design → place_design → phys_opt_design → route_design`。
+這是自動 non-project 流程（**non-project 不等於 OOC**），不建立 XPR，不使用 runs/hook，也不產生 bitstream。建立完整 input 快照與 synthesis／routed DCP，避免舊專案設定污染比較。相同 flow／四個 threads，每輪都是新的 in-memory project，正常 `synth_design → opt_design → place_design → phys_opt_design -directive AggressiveFanoutOpt → route_design`。
+
+### 2026-09-24：AggressiveFanoutOpt 實驗
+
+實際指令位於 Tcl 中 `place_design` 之後、`route_design` 之前；`experiment.txt` 的 `Flow:` 只是紀錄，由同一支 Tcl 自動產生。兩處已同步，不能只改舊的 experiment.txt 就期待實驗策略改變。舊 run01／run02 不修改，必須重跑到新目錄。
+
+只測 54 MHz：
+
+```tcl
+set dcim_sweep_root {C:/dcim_sweep/f54_aggressive_run01}
+set dcim_sweep_frequencies {54}
+set dcim_sweep_python {py -3}
+source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/CIM_CHIP/vivado/sweep_dcim_frequency.tcl}
+```
+
+腳本不增刪 `DONT_TOUCH`；它會複製當下 RTL。若已手動移除 `u_chip` 的屬性，此次就同時測到屬性與策略變更，不能將差異全部歸因於 AggressiveFanoutOpt。要單獨比較策略，需確認輸入 RTL 與基準一致；可查看新目錄的 `snapshot/fpga/dcim_master_chip_top.sv`。
+
+測試已確認七組實際呼叫的 directive 與 experiment.txt 記錄一致；這是 Tcl mock 驗證，不代表 Vivado 時序已改善。
 
 已有目錄會拒絕執行，不刪除或覆寫舊結果；若 run02 已存在，請改 run03。單輪失敗寫入 status.txt 後繼續其餘頻率。原始 RTL（包括使用者已改為 75 MHz 的時脈檔）不會被修改。
 
