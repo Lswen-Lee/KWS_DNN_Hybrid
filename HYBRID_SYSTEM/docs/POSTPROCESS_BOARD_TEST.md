@@ -82,6 +82,54 @@ set pp_destination {C:/fpga/pp0_f150_run02}
 - 獨立板級通過不代表與PE整合後一定通過，布局、繞線與介面路徑會改變。
 - 固定測資驅動的top可能被Vivado做常數／可達資料最佳化；這是此板級測試實例的結果，不是未受限制後處理IP的絕對Fmax或面積。
 
+## 六組自動合成／實作：100、125、150 MHz × pipeline 0、1
+
+新增 `board/postprocess/sweep_postprocess.tcl`，與原本只匯入的 `create_project.tcl` 不同：這份腳本會自動依序執行六個獨立專案的 Synthesis、Implementation 到 route_design、產生報告。不使用 OOC，不產生 bitstream，不自動燒錄板子。
+
+先關閉目前 Vivado 專案，在 Tcl Console 輸入：
+
+```tcl
+set pp_jobs 4
+set pp_sweep_root {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/build/postprocess_sweep/run01}
+source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/board/postprocess/sweep_postprocess.tcl}
+```
+
+若有Windows路徑長度問題，可只把 `pp_sweep_root` 改成較短的 `C:/fpga/pp_run01`。腳本仍從自身所在資料夾尋找RTL，不依賴pwd。
+未指定root時會自動建立時間戳目錄；指定的目錄若已存在則拒絕覆寫，第二輪請改run02。
+
+| 子專案 | pipeline | 目標MHz | MMCM除數 | 週期ns |
+|---|---:|---:|---:|---:|
+| pp0_f100 | 0 | 100 | 7.5 | 10 |
+| pp0_f125 | 0 | 125 | 6 | 8 |
+| pp0_f150 | 0 | 150 | 5 | 約6.667 |
+| pp1_f100 | 1 | 100 | 7.5 | 10 |
+| pp1_f125 | 1 | 125 | 6 | 8 |
+| pp1_f150 | 1 | 150 | 5 | 約6.667 |
+
+每組在自己的專案資料夾內保存XPR、Vivado runs、reports；共同根目錄的 `summary.csv` 每完成一組即追加一列：
+
+`pipeline, target_mhz, status, actual_period_ns, LUT, FF, BRAM_tiles, DSP, BUFG, WNS_ns, WHS_ns, setup_hold_check`
+
+CSV資源為**整個板級top**，包含ROM及自我測試。後處理本體請看各組 `reports/utilization_hierarchical.rpt` 中 `test/dut`，避免將驗證電路誤算成後處理。
+
+腳本檢查BUFG輸出時脈是否真的對應目標頻率，再取得setup/hold最差slack。
+`status=COMPLETE` 表示流程及報告完成，**不代表時序通過**；`setup_hold_check` 只依setup/hold判定，pulse-width、DRC、未限制路徑仍須查報告。
+失敗的執行標記 `ERROR` 並存 `sweep_error.log`，繼續下一組。未知資源欄位為NA，不假設為0。
+
+Console每組有 `SWEEP n/6 START`／`END`；最後看到 `SWEEP FINISHED` 才代表六組均已嘗試完成。
+每個專案使用相同原始碼與策略，執行期間請勿改RTL。先測完再做下一輪修改，避免頻率比較混入RTL差異。
+
+### MaxPool／Argmax的範圍
+
+**這六組不包含MaxPool或Argmax**，與前一版板級測試範圍相同。
+專案已有 `rtl/datapath/maxpool2x2_uint8.sv` 和 `argmax_8.sv`；但它們沒有接進 `pe_pot_result_stream`。
+MaxPool需有正確空間順序／frame資訊才能組成2×2視窗；Argmax位於FC2後比較8類結果，不能無條件串在所有卷積後處理後面。
+若要測整段後處理，需要另規劃卷積的requant/ReLU/pool路徑與最後FC的requant/argmax路徑及其測資，不能把此次結果當作完整後處理的Fmax。
+
+### 自動流程的驗證
+
+`python3 board/postprocess/test_sweep_tcl.py` 實際執行上述Tcl，以mock替代Vivado命令，驗證六組、CSV解析、負slack、合成失敗、錯頻率、失敗後繼續及防覆寫。本次mock及原有匯入腳本mock皆通過。這不是Vivado實測；目前環境無Vivado，實際六組報告須在Windows執行後取得。
+
 ## LED與按鍵
 
 | LED | 意義 |
