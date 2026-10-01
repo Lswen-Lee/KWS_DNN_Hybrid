@@ -1,0 +1,13 @@
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+set_property -dict {PACKAGE_PIN H16 IOSTANDARD LVCMOS33} [get_ports sys_clk_125m]
+create_clock -name board_clk -period 8.000 [get_ports sys_clk_125m]
+# MMCM output clock is automatically derived. Do NOT change input to 6.667 ns.
+set_clock_uncertainty 0.200 [get_clocks -include_generated_clocks board_clk]
+set_property -dict {PACKAGE_PIN D19 IOSTANDARD LVCMOS33 PULLDOWN true} [get_ports reset_button]
+set_property -dict {PACKAGE_PIN R14 IOSTANDARD LVCMOS33} [get_ports {led[0]}]
+set_property -dict {PACKAGE_PIN P14 IOSTANDARD LVCMOS33} [get_ports {led[1]}]
+set_property -dict {PACKAGE_PIN N16 IOSTANDARD LVCMOS33} [get_ports {led[2]}]
+set_property -dict {PACKAGE_PIN M14 IOSTANDARD LVCMOS33} [get_ports {led[3]}]
+set_false_path -from [get_ports reset_button] -to [get_pins -hier -filter {NAME =~ *button_meta_reg/D}]
+set_false_path -to [get_ports {led[*]}]
