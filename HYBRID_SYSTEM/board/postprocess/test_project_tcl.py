@@ -27,9 +27,12 @@ for mode in [0, 1]:
         if {{[lsearch -exact $properties {{generic {{POSTPROCESS_PIPELINED={mode} OUTPUT_DIVIDE=5.0}} sources_1}}] < 0}} {{error "Wrong clock/mode generics"}}
         if {{[string match *out_of_context* $properties]}} {{error "Unexpected OOC"}}
         if {{[lsearch -exact $created xc7z020clg400-1] < 0}} {{error "Wrong part"}}
+        foreach required {{maxpool2x2_uint8.sv argmax_8.sv postprocess_tail.sv}} {{
+            if {{![string match *$required* $sources]}} {{error "Missing source $required"}}
+        }}
     '''
     status = lib.Tcl_Eval(interp, text.encode())
     result = lib.Tcl_GetStringResult(interp).decode()
     lib.Tcl_DeleteInterp(interp)
     assert status == 0, result
-print('PASS Tcl import mock: comb/pipeline, 150 MHz generics, normal flow, PYNQ-Z2 part')
+print('PASS Tcl import mock: comb/pipeline, 150 MHz generics, normal flow, PYNQ-Z2 part, pool/argmax/tail sources')

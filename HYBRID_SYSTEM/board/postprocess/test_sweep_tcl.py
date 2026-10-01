@@ -35,6 +35,7 @@ proc launch_runs {args} {lappend ::launches [list $::pp_pipeline $::pp_frequency
 proc wait_on_run {args} {}
 proc open_run {args} {}
 proc get_pins {args} {return output_buffer/O}
+proc get_cells {args} {return {test/dut/data_reg test/tail/pool/output_reg}}
 proc get_clocks {args} {return generated_clk}
 proc get_timing_paths {args} {return [lindex $args 1]}
 proc get_property {property object} {
