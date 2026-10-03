@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：S1 package、activation buffer、feature_map_writer及其TB已實作；reader尚未實作，並非全階段完成。
+狀態：S1 package、activation buffer、writer、reader及其TB已實作；尚未完成S2池化整合、完整推論或Vivado驗證。
 
 ## 0. 本文件的目的與使用規則
 
@@ -110,10 +110,10 @@ flowchart TB
 | 模擬通過 | `rtl/kws_system_pkg.sv` | 共用讀寫模式、地址／長度格式、配置定義 |
 | 模擬通過 | `rtl/memory/activation_buffer.sv` | 32KiB同步記憶體，一讀一寫；不管理CNN座標 |
 | 模擬通過 | `rtl/control/feature_map_writer.sv` | LINEAR／CHW定址、握手、成功寫入計數與完成通知 |
-| 未開始 | `rtl/datapath/activation_reader.sv` | LINEAR／PATCH位址、同步讀取對齊、輸出反壓與replay支援 |
+| 模擬通過 | `rtl/datapath/activation_reader.sv` | LINEAR／PATCH位址、同步讀取對齊、輸出反壓與重送命令式replay |
 | 模擬通過 | `tb/memory/tb_activation_buffer.sv` | 全地址讀回、固定種子隨機交易、reset與碰撞負向測試 |
 | 模擬通過 | `tb/control/tb_feature_map_writer.sv` | 交錯channel輸入轉CHW、非零base、越界、commit計數；來源區重疊由未來上層檢查 |
-| 未開始 | `tb/datapath/tb_activation_reader.sv` | patch索引、跨列／channel、停頓、不重複不漏資料 |
+| 模擬通過 | `tb/datapath/tb_activation_reader.sv` | patch索引、跨列／channel、停頓、不重複不漏資料 |
 
 驗收：資料可正確寫入／讀回；writer與reader用獨立scoreboard核對地址及資料，不只檢查done。同步RAM回應遭遇ready=0時不掉資料。記憶體內容未初始化時不能當作0。
 
@@ -188,7 +188,7 @@ backend詳細mapping、sum統計、tile邊界與CDC時脈需另一步確認；�
 |---|---|
 | RAM模板 | S1已選 inferred BRAM，同步讀取一級，不增加第二級輸出FF；實際BRAM推導待Vivado確認 |
 | 讀寫碰撞 | S1以模擬$fatal拒絕同地址同拍有效讀寫；合成不加入碰撞比較器，外部排程須保證不碰撞 |
-| 反壓 | Readerresponse buffer深度、在途數；不預設能任意無限接收 |
+| 反壓 | Reader已採兩筆response buffer，reserved_count包含在途回應；固定一級同步RAM、最多一筆尚未入FIFO的回應 |
 | 命令協定 | cmd欄位精確位寬、接受時機、非法設定／abort行為 |
 | 系統時脈 | 不在本文件鎖死100／125／150MHz；整合後另驗證，不沿用獨立結果當保證 |
 | 主機介面 | 先用可驗證串流介面；AXI/UART/DMA與txt解析由後續系統介面規劃決定 |
@@ -231,8 +231,9 @@ stateDiagram-v2
 | 2026-10-03 | v1.0／規劃 | 記錄單buffer基準、分階段檔案、介面邊界、測試與未決事項 | 文件檢查；沒有新增RTL、TB或Vivado執行結果 |
 | 2026-10-03 | S1第一批 | package、BRAM導向activation buffer、TB及DDR分層說明 | Verilator 5.030模擬108449次檢查通過，讀70607／寫37908；碰撞負向測試及lint通過。未執行Vivado／板測 |
 | 2026-10-03 | S1第二批 | feature_map_writer、真實RAM整合TB及Makefile | Verilator 5.030：54946次寫入、163840筆讀回、6個成功命令與10個預期錯誤；writer lint及原RAM測試/lint通過。未執行Vivado／板測 |
+| 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 
-下一步為 **S1：規劃並實作activation_reader**；本次不開始S2或完整系統。
+下一步為 **S2：規劃pool_transfer_controller與kws_activation_path**；不把S1測試當成S2或完整系統完成。
 
 ## 9. S1 第一批實作：package 與 activation buffer
 
@@ -240,7 +241,7 @@ stateDiagram-v2
 
 - 新增 `rtl/kws_system_pkg.sv`、`rtl/memory/activation_buffer.sv`、`tb/memory/tb_activation_buffer.sv`。
 - 修改 `Makefile`：新增 `test-activation-buffer`、`lint-activation-buffer`，加入原本test/lint入口；既有測試保留。
-- 本節記錄RAM介面。writer見第10節；reader、DDR bridge仍未實作。
+- 本節記錄RAM介面。writer見第10節；reader見第11節；DDR bridge仍未實作。
 
 ### 確定的電路與時序
 
@@ -386,3 +387,88 @@ TB接真正activation_buffer。stimulus獨立計算期望地址／資料並排�
 本次只驗證writer+RAM和保留RAM單測；未驗證reader、完整推論、DDR、Vivado資源／時序或上板。
 
 實測結果：`PASS feature_map_writer commits=54946 read_checks=163840 success=6 error=10`；writer lint通過。原activation_buffer回歸維持108449次檢查通過，碰撞負向測試與lint通過。
+
+## 11. S1 第三批：activation_reader（2026-10-04）
+
+### 檔案與責任
+
+新增`rtl/datapath/activation_reader.sv`及`tb/datapath/tb_activation_reader.sv`，Makefile新增`test-activation-reader`／`lint-activation-reader`並保留既有測試。RAM與writer介面不變。
+
+一次命令讀一份LINEAR向量或一個3×3×C patch，不負責掃描整層的patch起點、不儲存im2col矩陣、不執行MAC。Replay透過外部重送同一命令實現，不加入PE分組FSM。
+
+### 可閱讀的程式分區
+
+RTL分為四區：①命令與地址暫存器、②兩筆FIFO與信用計數、③RAM回應對齊/FIFO循序邏輯、④命令FSM與地址遞增；最後另列不合成的介面檢查。使用具名狀態與wire區分request/response/output交易，避免把三者都稱為read完成。
+
+```text
+命令 → CONFIG檢查 → ISSUE地址產生 → RAM讀取
+                                      ↓
+                               pending_last對齊
+                                      ↓
+                           兩筆{UINT8,last} FIFO
+                                      ↓
+                           out_valid/out_ready
+                                      ↓
+                          最後輸出握手才done
+```
+
+### 介面與資料順序
+
+| 訊號 | 說明 |
+|---|---|
+| clk/rst | 同步active-high reset；與RAM共用 |
+| cmd_valid/cmd_ready | IDLE接受，配置會保存；命令期間不能修改正在處理的配置 |
+| cmd_mode/base/count | LINEAR/PATCH enum、15-bit本地byte位址、16-bit LINEAR筆數 |
+| cmd_width/height/channels | 8/8/6-bit，PATCH的完整來源圖尺寸 |
+| cmd_x/y | 8-bit，patch左上角 |
+| ram_rd_en/addr | 獨占RAM讀取埠；上升緣必定接受，沒有ready |
+| ram_rd_valid/data | 固定一級同步回應，不能改接任意延遲DDR |
+| out_valid/ready/data/last | ready=0時valid及data/last保持；last只在valid時有意義 |
+| busy/done/error | busy為非IDLE；成功done、非法配置error，皆互斥單拍 |
+
+LINEAR：`base+i`。PATCH：`base+c*H*W+(y+u)*W+x+v`，順序c→u→v，v最快；`k=c*9+u*3+v`。數學順序已驗證，但與實際軟體權重匯出檔的端到端配對仍留待S3/S5，不能將索引TB當成模型推論通過。
+
+PATCH CONFIG phase0計算plane_stride及start_address；phase1計算完整來源大小與9C；phase2檢查後才縮位。拒絕LINEAR零筆數/越界、PATCH W/H<3、C=0、x+3>W、y+3>H、完整來源超過RAM。檢查使用擴位數值，避免255+3繞回。
+
+執行時保存channel_start、row_start、current_address：同行+1，換kernel row加W，換channel加plane_stride。每次真正發出ram_rd_en才更新，最後請求之後不再遞增。ISSUE路徑不重新做座標乘法。
+
+### 兩筆緩衝如何不掉資料
+
+`buffered_count`是已進FIFO筆數；`reserved_count`是已發出但尚未被下游消費的全部筆數（含pending回應）。發出新請求前需`reserved_count<2`，或本拍有output_fire釋放空位。request增加reserved，output減少reserved；RAM回應只是從在途移到FIFO，不再次增加reserved。
+
+每筆RAM請求的last由pending_last與回應對齊，再和資料一起寫入FIFO。FIFO讀寫指標各1-bit，只有兩筆；同拍push/pop更新不同交易的所有權。下游突然stall後最多保留兩筆，不再繼續發出無空間的請求。
+
+假設E0接受第一筆RAM地址：E0後RAM輸出D0，E1 Reader將D0存FIFO，E2下游最早接受D0。同時可流水發出後續請求；持續ready時首筆之後每拍一筆，這項由TB檢查，而非僅靠估算。
+
+### FSM與完成條件
+
+```mermaid
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> CONFIG: cmd握手
+  CONFIG --> CONFIG: phase0/1預算
+  CONFIG --> ISSUE: phase2合法
+  CONFIG --> IDLE: phase2非法 error
+  ISSUE --> ISSUE: 有信用才發出下一地址
+  ISSUE --> DRAIN: 最後請求發出
+  DRAIN --> IDLE: 最後out_valid且out_ready，done
+```
+
+DRAIN仍接收RAM回應與輸出資料，只停止新請求。done不是請求發完，也不是RAM回完；是最後輸出被消費。reset取消命令、pending與FIFO有效狀態，不清RAM且不回報done。reset須與RAM同步，不能單獨留下舊回應；RTL模擬會檢查固定延遲/回應所有權與緩衝容量。下游永久不ready時合法地保持busy，沒有硬體timeout。
+
+### 驗證方法與限制
+
+```bash
+cd /home/LAB505/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM
+make test-activation-reader lint-activation-reader
+make test-feature-map-writer lint-feature-map-writer
+make test-activation-buffer lint-activation-buffer
+```
+
+TB透過RAM寫入埠初始化全部32768筆；獨立用完整數學公式產生期望地址，不複製RTL的逐步加法。每次request核對地址；每次output握手核對資料、順序、last；每個stall檢查payload保持。Continuous測試從首筆輸出後檢查沒有bubble。done必須對應全部request/output且FIFO已空。
+
+測試：32768筆LINEAR、末地址單筆及最後一筆停20拍、144筆FC重讀三次、固定seed隨機反壓、起始停25拍、2channel數學例子、Conv1上下角/Conv2上下角/Conv3右下角、32channel、10個非法命令、CONFIG/在途/緩衝三種reset中止並恢復。非法命令必須完全沒有RAM請求。整合使用真正activation_buffer，不用假RAM；未包含真實PE replay握手或完整pool路徑。
+
+BRAM推導、最高頻率、資源與板測未驗證。後續外層須管理來源已初始化、讀寫區域不重疊、跨時脈CDC及MaxPool無out_ready的約束。本Reader不提供DDR/AXI或任意多拍RAM延遲相容性。
+
+實測：15個成功命令、10個預期拒絕、34284次RAM請求、34281筆輸出、889次停頓保持檢查。差額3筆為reset刻意取消，TB另外檢查此差額。持續ready案例檢查首筆後每拍一筆。原writer回歸54946次commit／163840筆讀回通過；RAM回歸108449次檢查與碰撞負向測試通過；三個模組lint通過。未重跑所有PE/CIM系統回歸。

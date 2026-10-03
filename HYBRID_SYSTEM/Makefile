@@ -8,6 +8,15 @@ RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
+READER_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv
+.PHONY: test-activation-reader lint-activation-reader
+test: test-activation-reader
+lint: lint-activation-reader
+test-activation-reader: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM --top-module tb_activation_reader -Mdir $(BUILD_DIR)/activation_reader $(READER_RTL) tb/datapath/tb_activation_reader.sv
+	$(BUILD_DIR)/activation_reader/Vtb_activation_reader
+lint-activation-reader:
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM --top-module activation_reader rtl/kws_system_pkg.sv rtl/datapath/activation_reader.sv
 WRITER_RTL := $(ACTIVATION_RTL) rtl/control/feature_map_writer.sv
 .PHONY: test-feature-map-writer lint-feature-map-writer
 test: test-feature-map-writer
@@ -211,6 +220,7 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-activation-reader / lint-activation-reader - LINEAR/PATCH reader, stalls and replay"
 	@echo "  make test-feature-map-writer / lint-feature-map-writer - LINEAR/CHW writer with real activation RAM"
 	@echo "  make test-activation-buffer / lint-activation-buffer - S1 32KiB synchronous activation RAM"
 	@echo "  make test-memory-engine-zp128 / check-engine-elaboration-zp128 - three raw zp128 configurations"
