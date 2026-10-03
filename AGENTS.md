@@ -1,5 +1,13 @@
 # Repository workflow requested by the owner
 
+## Single-buffer architecture continuity
+
+- Before planning, implementing, or revising the KWS activation-memory/layer-integration subsystem, read `HYBRID_SYSTEM/docs/SINGLE_BUFFER_ARCHITECTURE.md`. It records the agreed baseline, staged file list, reuse boundaries, unresolved choices and verification gates.
+- State the stage being worked on; update its progress and verified results in that document after changes. Do not silently rename, replace, expand or alter the architecture during a recap. Propose material deviations and obtain the user's agreement first; newer explicit user instructions take precedence and must be recorded.
+- Keep planned files distinct from implemented files. Do not treat BRAM MaxPool, A/B buffering, or a full DCIM backend as already selected or completed merely because they were discussed.
+
+## Git workflow
+
 - Confirmed repository: `Lswen-Lee/KWS_DNN_Hybrid`, private. Use Git HTTPS credentials verified as `Lswen-Lee`; do not use another account's connector to publish elsewhere. Commit author uses the existing `Lswen-Lee` Git identity.
 
 - After completing an authorized implementation/change, run relevant verification and update the corresponding architecture/test documentation.
