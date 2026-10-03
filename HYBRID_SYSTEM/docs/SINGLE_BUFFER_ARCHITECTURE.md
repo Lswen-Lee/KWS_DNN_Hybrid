@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：規劃已記錄；本次僅新增文件，**尚未實作下列新 RTL／TB**。
+狀態：S1 共用 package、activation buffer 與記憶體 TB 已實作；其餘依下方清單，並非全階段完成。
 
 ## 0. 本文件的目的與使用規則
 
@@ -107,11 +107,11 @@ flowchart TB
 
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
-| 未開始 | `rtl/kws_system_pkg.sv` | 共用操作種類、地址／長度格式、配置定義 |
-| 未開始 | `rtl/memory/activation_buffer.sv` | 32KiB同步記憶體，一讀一寫；不管理CNN座標 |
+| 模擬通過 | `rtl/kws_system_pkg.sv` | 共用讀寫模式、地址／長度格式、配置定義 |
+| 模擬通過 | `rtl/memory/activation_buffer.sv` | 32KiB同步記憶體，一讀一寫；不管理CNN座標 |
 | 未開始 | `rtl/control/feature_map_writer.sv` | LINEAR／CHW定址、握手、成功寫入計數與完成通知 |
 | 未開始 | `rtl/datapath/activation_reader.sv` | LINEAR／PATCH位址、同步讀取對齊、輸出反壓與replay支援 |
-| 未開始 | `tb/memory/tb_activation_buffer.sv` | 邊界位址、不同資料、同時讀寫、讀取延遲 |
+| 模擬通過 | `tb/memory/tb_activation_buffer.sv` | 全地址讀回、固定種子隨機交易、reset與碰撞負向測試 |
 | 未開始 | `tb/control/tb_feature_map_writer.sv` | 交錯channel輸入轉CHW、非零base、越界／重疊設定、commit計數 |
 | 未開始 | `tb/datapath/tb_activation_reader.sv` | patch索引、跨列／channel、停頓、不重複不漏資料 |
 
@@ -165,7 +165,7 @@ backend詳細mapping、sum統計、tile邊界與CDC時脈需另一步確認；�
 |---|---|---|
 | 未開始 | `scripts/generate_activation_path_vectors.py`（新增） | 獨立Python陣列／數學Golden、固定seed、記憶體初始化與預期輸出 |
 | 規劃已記錄 | `docs/SINGLE_BUFFER_ARCHITECTURE.md`（本檔） | 唯一的本子系統架構基準、決定與進度 |
-| 待修改 | `Makefile` | 增加各層可單獨執行的test target，保留既有測試 |
+| S1第一批已更新 | `Makefile` | 已增加activation buffer test/lint，其餘隨階段增加；保留既有測試 |
 | 未開始 | `vivado/create_activation_path_project.tcl`（新增） | S2後建立統一匯入／資源／時序驗證流程；具體top與板級wrapper先規劃再實作 |
 
 ## 5. 介面語義：已定方向與仍待細化
@@ -186,8 +186,8 @@ backend詳細mapping、sum統計、tile邊界與CDC時脈需另一步確認；�
 
 | 項目 | 尚未決定的細節 |
 |---|---|
-| RAM模板 | inferred BRAM或vendor IP、精確讀取延遲、是否使用額外輸出FF |
-| 讀寫碰撞 | 本版預設禁止有效交易同位址讀寫；具體assertion／錯誤回報及RAM模式仍需定義 |
+| RAM模板 | S1已選 inferred BRAM，同步讀取一級，不增加第二級輸出FF；實際BRAM推導待Vivado確認 |
+| 讀寫碰撞 | S1以模擬$fatal拒絕同地址同拍有效讀寫；合成不加入碰撞比較器，外部排程須保證不碰撞 |
 | 反壓 | Readerresponse buffer深度、在途數；不預設能任意無限接收 |
 | 命令協定 | cmd欄位精確位寬、接受時機、非法設定／abort行為 |
 | 系統時脈 | 不在本文件鎖死100／125／150MHz；整合後另驗證，不沿用獨立結果當保證 |
@@ -229,5 +229,79 @@ stateDiagram-v2
 | 日期 | 版本／階段 | 內容 | 驗證狀態 |
 |---|---|---|---|
 | 2026-10-03 | v1.0／規劃 | 記錄單buffer基準、分階段檔案、介面邊界、測試與未決事項 | 文件檢查；沒有新增RTL、TB或Vivado執行結果 |
+| 2026-10-03 | S1第一批 | package、BRAM導向activation buffer、TB及DDR分層說明 | Verilator 5.030模擬108449次檢查通過，讀70607／寫37908；碰撞負向測試及lint通過。未執行Vivado／板測 |
 
-下一步固定為 **S1：先確認並實作pkg與activation buffer的精確介面／同步讀取契約，再逐步完成writer與reader**。未得到新的實作指示前，本文件不代表已授權開始全部階段。
+下一步為 **S1：規劃並實作writer，再完成reader**；本次不開始S2或完整系統。
+
+## 9. S1 第一批實作：package 與 activation buffer
+
+### 本次檔案
+
+- 新增 `rtl/kws_system_pkg.sv`、`rtl/memory/activation_buffer.sv`、`tb/memory/tb_activation_buffer.sv`。
+- 修改 `Makefile`：新增 `test-activation-buffer`、`lint-activation-buffer`，加入原本test/lint入口；既有測試保留。
+- 本節記錄實際介面。writer、reader、DDR bridge仍未實作。
+
+### 確定的電路與時序
+
+Package定義8-bit activation、15-bit位址、16-bit筆數、深度32768、zp128、讀取LINEAR/PATCH及寫入LINEAR/CHW。沒有先加入未決的layer descriptor或外部匯流排格式。
+
+`activation_buffer`使用同一clk的一寫一讀同步RAM，`ram_style="block"`提示Vivado推導BRAM。介面：
+
+| 腳位 | 功能 |
+|---|---|
+| `clk/rst` | 上升緣；同步active-high reset |
+| `wr_en/wr_addr[14:0]/wr_data[7:0]` | rst=0且wr_en=1的上升緣寫入 |
+| `rd_en/rd_addr[14:0]` | rst=0且rd_en=1的上升緣接受讀取 |
+| `rd_valid/rd_data[7:0]` | 接受讀取的上升緣之後更新；下游可在下一上升緣接收 |
+
+沒有FSM、busy/done、座標運算或量化。無讀取時rd_valid=0、rd_data保持；reset只清rd_valid並禁止交易，不清mem或rd_data。rd_valid=0時資料不可使用，未寫入的地址不可視為0。每拍最多讀一筆、寫一筆，不同地址可同拍讀寫。同地址碰撞是非法使用，並非提供特定的read-first/write-first功能。
+
+```text
+Writer（後續）── wr_en/addr/data ──→ [32768×8 BRAM backend]
+Reader（後續）── rd_en/addr ───────→ [                  ]
+Reader（後續）←─ rd_valid/data ──── [                  ]
+```
+
+### 為BRAM與DDR保留的分層
+
+本模組是**本地固定延遲BRAM backend**，不是通用DDR控制器。15-bit位址是本地byte offset，不是主機實體DDR地址。
+
+PYNQ-Z2的外部DDR由Zynq PS記憶體系統管理。未來建議先採用：
+
+```text
+PS DDR ↔ AXI/DMA搬移器（未實作） ↔ 本地activation BRAM ↔ reader/writer ↔ 運算核心
+```
+
+保留CHW資料排列與UINT8格式，搬移器負責外部較寬bus打包、byte lane、burst與DDR base address；控制器等待搬移完成後才讓本地運算使用該區域。若PS軟體共享DDR資料，還需處理配置、快取一致性與所有權。
+
+**不能**將mem陣列加一個屬性就放到板上DDR，也不能讓DDR假裝每拍一定接受、固定一拍回應。如果未來選擇直接以DDR取代本地RAM，必須另行規劃request valid/ready、response valid/ready、寫入完成/錯誤與在途數；現有固定延遲介面不能直接替換。此改動需先確認，不在本次偷偷加入AXI或改變架構。
+
+後續reader對運算核心維持valid/ready，在其RAM側管理回應暫存；writer完成需以實際commit為準。DDR搬移與本地讀寫的埠所有權也由外層控制，不能未經仲裁同時驅動本模組。
+
+### 測試命令與檢查內容
+
+```bash
+cd /home/LAB505/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM
+make test-activation-buffer
+make lint-activation-buffer
+```
+
+TB只透過公開介面測試，以獨立reference array比對；在negedge送資料、posedge後檢查，並檢查上升緣之前輸出不得因地址改變而變動。
+
+1. Package位寬、深度、zp與模式定義。
+2. 基本A5寫後讀、00/7F/80/FF資料。
+3. 全32768地址填入與讀回（含0、32767邊界）。
+4. 連續不同地址同拍讀寫、空拍的valid與data保持。
+5. reset期間即使en拉高亦不交易、舊記憶體保留。
+6. seed=0x05052026的10000筆混合讀寫，再完整掃描32768筆確認內容。
+7. 獨立執行`+collision`負向案例；必須非零結束且log含`ACTIVATION_BUFFER_COLLISION`才算通過，避免把任意失敗誤判成功。
+
+尚未驗證下游反壓（reader未實作）、DDR、全模型推論或上板。Verilator是二態模擬，因此未初始化資料的X特性不是本次驗證結論；TB以initialized表禁止未寫先讀。
+
+### Vivado後續驗證
+
+將`kws_system_pkg.sv`先於`activation_buffer.sv`編譯，RTL設為SystemVerilog；TB僅放Simulation Sources，不加入合成來源。本階段不需要更改現有PE/CIM專案。
+
+Vivado綜合後檢查`report_utilization -hierarchical`與RAMB18E1/RAMB36E1實例，確認不是大量FF/LUTRAM。`ram_style`是推導要求，仍需實際報告核對，不能只憑模擬宣稱已使用BRAM。時序需在設定真實時脈、接上reader/writer的整合設計route後判定，不承諾125/150MHz。
+
+參考：[AMD UG901 Simple Dual-Port Block RAM Examples](https://docs.amd.com/r/2022.2-English/ug901-vivado-synthesis/Simple-Dual-Port-Block-RAM-Examples)、[官方PYNQ-Z2 PS/DDR專案設定](https://github.com/Xilinx/PYNQ/blob/master/boards/Pynq-Z2/petalinux_bsp/hardware_project/pynqz2.tcl)。

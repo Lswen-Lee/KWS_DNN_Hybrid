@@ -7,6 +7,18 @@ BUILD_DIR := build
 RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
+ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
+.PHONY: build-activation-buffer test-activation-buffer lint-activation-buffer
+test: test-activation-buffer
+lint: lint-activation-buffer
+build-activation-buffer: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_activation_buffer -Mdir $(BUILD_DIR)/activation_buffer $(ACTIVATION_RTL) tb/memory/tb_activation_buffer.sv
+test-activation-buffer: build-activation-buffer
+	$(BUILD_DIR)/activation_buffer/Vtb_activation_buffer
+	@ulimit -c 0; if $(BUILD_DIR)/activation_buffer/Vtb_activation_buffer +collision > $(BUILD_DIR)/activation_buffer/collision.log 2>&1; then echo "FAIL: collision accepted"; exit 1; else rg -q 'ACTIVATION_BUFFER_COLLISION' $(BUILD_DIR)/activation_buffer/collision.log && echo "PASS expected collision rejection"; fi
+lint-activation-buffer:
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM --top-module activation_buffer $(ACTIVATION_RTL)
+
 POT_RTL := $(RTL_DATAPATH)/requantizer_int32_to_uint8_pot.sv $(RTL_DATAPATH)/requantizer_int32_to_uint8_pot_comb.sv
 POT_TB := $(TB_DATAPATH)/tb_requantizer_int32_to_uint8_pot.sv
 .PHONY: lint-requantizer-pot build-requantizer-pot test-requantizer-pot test-requantizer-pot-exports
@@ -190,6 +202,7 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-activation-buffer / lint-activation-buffer - S1 32KiB synchronous activation RAM"
 	@echo "  make test-memory-engine-zp128 / check-engine-elaboration-zp128 - three raw zp128 configurations"
 	@echo "  make test-pot-engine / test-pot-stream - end-to-end PE/PoT and elastic result path"
 	@echo "  make test-postprocess-pot / test-dcim-offset - frame postprocessing and standalone DCIM correction"
