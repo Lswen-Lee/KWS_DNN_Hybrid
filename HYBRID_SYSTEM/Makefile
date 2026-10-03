@@ -8,6 +8,15 @@ RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
+WRITER_RTL := $(ACTIVATION_RTL) rtl/control/feature_map_writer.sv
+.PHONY: test-feature-map-writer lint-feature-map-writer
+test: test-feature-map-writer
+lint: lint-feature-map-writer
+test-feature-map-writer: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM --top-module tb_feature_map_writer -Mdir $(BUILD_DIR)/feature_map_writer $(WRITER_RTL) tb/control/tb_feature_map_writer.sv
+	$(BUILD_DIR)/feature_map_writer/Vtb_feature_map_writer
+lint-feature-map-writer:
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM --top-module feature_map_writer rtl/kws_system_pkg.sv rtl/control/feature_map_writer.sv
 .PHONY: build-activation-buffer test-activation-buffer lint-activation-buffer
 test: test-activation-buffer
 lint: lint-activation-buffer
@@ -202,6 +211,7 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-feature-map-writer / lint-feature-map-writer - LINEAR/CHW writer with real activation RAM"
 	@echo "  make test-activation-buffer / lint-activation-buffer - S1 32KiB synchronous activation RAM"
 	@echo "  make test-memory-engine-zp128 / check-engine-elaboration-zp128 - three raw zp128 configurations"
 	@echo "  make test-pot-engine / test-pot-stream - end-to-end PE/PoT and elastic result path"

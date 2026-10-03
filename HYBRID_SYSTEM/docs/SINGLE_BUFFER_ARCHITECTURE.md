@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：S1 共用 package、activation buffer 與記憶體 TB 已實作；其餘依下方清單，並非全階段完成。
+狀態：S1 package、activation buffer、feature_map_writer及其TB已實作；reader尚未實作，並非全階段完成。
 
 ## 0. 本文件的目的與使用規則
 
@@ -109,10 +109,10 @@ flowchart TB
 |---|---|---|
 | 模擬通過 | `rtl/kws_system_pkg.sv` | 共用讀寫模式、地址／長度格式、配置定義 |
 | 模擬通過 | `rtl/memory/activation_buffer.sv` | 32KiB同步記憶體，一讀一寫；不管理CNN座標 |
-| 未開始 | `rtl/control/feature_map_writer.sv` | LINEAR／CHW定址、握手、成功寫入計數與完成通知 |
+| 模擬通過 | `rtl/control/feature_map_writer.sv` | LINEAR／CHW定址、握手、成功寫入計數與完成通知 |
 | 未開始 | `rtl/datapath/activation_reader.sv` | LINEAR／PATCH位址、同步讀取對齊、輸出反壓與replay支援 |
 | 模擬通過 | `tb/memory/tb_activation_buffer.sv` | 全地址讀回、固定種子隨機交易、reset與碰撞負向測試 |
-| 未開始 | `tb/control/tb_feature_map_writer.sv` | 交錯channel輸入轉CHW、非零base、越界／重疊設定、commit計數 |
+| 模擬通過 | `tb/control/tb_feature_map_writer.sv` | 交錯channel輸入轉CHW、非零base、越界、commit計數；來源區重疊由未來上層檢查 |
 | 未開始 | `tb/datapath/tb_activation_reader.sv` | patch索引、跨列／channel、停頓、不重複不漏資料 |
 
 驗收：資料可正確寫入／讀回；writer與reader用獨立scoreboard核對地址及資料，不只檢查done。同步RAM回應遭遇ready=0時不掉資料。記憶體內容未初始化時不能當作0。
@@ -230,8 +230,9 @@ stateDiagram-v2
 |---|---|---|---|
 | 2026-10-03 | v1.0／規劃 | 記錄單buffer基準、分階段檔案、介面邊界、測試與未決事項 | 文件檢查；沒有新增RTL、TB或Vivado執行結果 |
 | 2026-10-03 | S1第一批 | package、BRAM導向activation buffer、TB及DDR分層說明 | Verilator 5.030模擬108449次檢查通過，讀70607／寫37908；碰撞負向測試及lint通過。未執行Vivado／板測 |
+| 2026-10-03 | S1第二批 | feature_map_writer、真實RAM整合TB及Makefile | Verilator 5.030：54946次寫入、163840筆讀回、6個成功命令與10個預期錯誤；writer lint及原RAM測試/lint通過。未執行Vivado／板測 |
 
-下一步為 **S1：規劃並實作writer，再完成reader**；本次不開始S2或完整系統。
+下一步為 **S1：規劃並實作activation_reader**；本次不開始S2或完整系統。
 
 ## 9. S1 第一批實作：package 與 activation buffer
 
@@ -239,7 +240,7 @@ stateDiagram-v2
 
 - 新增 `rtl/kws_system_pkg.sv`、`rtl/memory/activation_buffer.sv`、`tb/memory/tb_activation_buffer.sv`。
 - 修改 `Makefile`：新增 `test-activation-buffer`、`lint-activation-buffer`，加入原本test/lint入口；既有測試保留。
-- 本節記錄實際介面。writer、reader、DDR bridge仍未實作。
+- 本節記錄RAM介面。writer見第10節；reader、DDR bridge仍未實作。
 
 ### 確定的電路與時序
 
@@ -305,3 +306,83 @@ TB只透過公開介面測試，以獨立reference array比對；在negedge送�
 Vivado綜合後檢查`report_utilization -hierarchical`與RAMB18E1/RAMB36E1實例，確認不是大量FF/LUTRAM。`ram_style`是推導要求，仍需實際報告核對，不能只憑模擬宣稱已使用BRAM。時序需在設定真實時脈、接上reader/writer的整合設計route後判定，不承諾125/150MHz。
 
 參考：[AMD UG901 Simple Dual-Port Block RAM Examples](https://docs.amd.com/r/2022.2-English/ug901-vivado-synthesis/Simple-Dual-Port-Block-RAM-Examples)、[官方PYNQ-Z2 PS/DDR專案設定](https://github.com/Xilinx/PYNQ/blob/master/boards/Pynq-Z2/petalinux_bsp/hardware_project/pynqz2.tcl)。
+
+## 10. S1 第二批：feature_map_writer
+
+新增`rtl/control/feature_map_writer.sv`、`tb/control/tb_feature_map_writer.sv`，修改Makefile加入test/lint；沿用package與真正activation_buffer，不修改RAM、PE、CIM、MaxPool。這是本地BRAM寫入端，不是DDR/AXI master。
+
+### 模組分工與介面
+
+```text
+Controller → 命令保存 → CONFIG三拍檢查
+                             ↓
+UINT8＋座標 → LINEAR/CHW地址計算 → 待寫入FF → activation_buffer
+                接收計數                 實際commit計數 → done/error
+```
+
+| 腳位 | 寬度／規則 |
+|---|---|
+| clk/rst | 同步active-high reset，必須與RAM共用 |
+| cmd_valid/cmd_ready | 只在IDLE且rst=0接受命令；不接受同拍第一筆資料 |
+| cmd_mode/cmd_base | package模式enum／15-bit本地byte位址 |
+| cmd_width/height/channels | 8/8/6 bits，CHW使用；channels可表示32 |
+| cmd_count | 16 bits，LINEAR使用，CHW忽略 |
+| in_valid/in_ready | RECEIVE才ready；有效握手表示提交一筆待檢查的資料 |
+| in_data/channel/y/x | 8/6/8/8 bits；LINEAR忽略座標 |
+| wr_en/wr_addr/wr_data | 直接接本地RAM；沒有wr_ready，寫入埠必須獨占且每拍可接受 |
+| busy/done/error | busy=非IDLE；done/error互斥單拍脈波，成功只done，失敗只error |
+
+上游在valid=1且ready=0時需保持資料；busy期間的新命令不被接受，若cmd_valid持續至回到IDLE則視為下一命令。
+
+### RTL各段內容
+
+1. **設定暫存**：只在命令握手時保存mode/base/W/H/C/count。後續外部配置變動不影響本命令。
+2. **CONFIG phase0**：16-bit `plane_stride=W*H`，可完整表示255×255。
+3. **CONFIG phase1**：32-bit `total_wide=C*plane_stride`，或LINEAR的count。
+4. **CONFIG phase2**：檢查零尺寸／零筆數與`base+total<=32768`。使用32-bit運算再比較，合法後才轉16-bit expected_count。
+5. **地址計算**：LINEAR=`base+accepted_count`；CHW=`base+c*plane_stride+y*W+x`。先檢查座標及寬地址，再截成15-bit。CHW允許交錯或反向channel順序，故第一版仍保留座標乘法；尚未量測面積或時序，不宣稱只用加法。設定階段的W×H已預算。
+6. **一筆待寫入暫存器**：資料與地址只在合法輸入握手時保存；pending_valid限定wr_en。下一上升緣RAM寫入，並可同時接受新資料。payload不reset，只reset valid。
+7. **兩個計數器**：accepted_count計合法接受；committed_count只在wr_en被RAM接受的上升緣增加。均16-bit，可表示32768。
+8. **DRAIN**：成功時將本拍wr_en也納入完成判斷，所以最後一筆實際寫入的同一上升緣後拉高done；不是最後一筆輸入握手便done。
+
+### 狀態圖
+
+```mermaid
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> CONFIG: 命令握手
+  CONFIG --> CONFIG: phase0面積 / phase1總筆數
+  CONFIG --> RECEIVE: phase2合法
+  CONFIG --> IDLE: 非法設定 error脈波
+  RECEIVE --> RECEIVE: 接收與提交可重疊
+  RECEIVE --> DRAIN: 最後一筆合法輸入 / 非法座標
+  DRAIN --> IDLE: 最後提交完成 done / 失敗 error
+```
+
+正常N筆連續輸入：命令於E0接受，E1/E2/E3配置；最早E4接收第一筆，E5提交第一筆；最後一筆於E(N+3)接受、E(N+4)提交並done。含輸入空拍時相應延後；沒有內建等待輸入的timeout。
+
+### 錯誤與reset
+
+- 非法配置不接受資料、不寫RAM，error後回IDLE。
+- 非法CHW座標的握手會終止本命令，但該筆不寫入；之前已接受的待寫資料可在該拍提交。DRAIN後回報error，沒有rollback，目的區為部分更新，上層不得當作完整feature map。
+- Reset取消尚未提交的payload，不回報done/error、不清RAM；已提交內容保留。
+- 不配置座標bitmap：重複／缺漏座標由上游保證與TB檢查。筆數達標不證明座標唯一。
+- Writer不知道來源區，來源／目的重疊檢查歸上層；不能把此單測稱為已驗證全系統區域安全。
+- 後續MaxPool必須等writer in_ready才啟動輸入串流，且pool輸出期間寫入埠須保證可用；目前writer不直接連上pool。
+
+### 驗證方式
+
+```bash
+cd /home/LAB505/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM
+make test-feature-map-writer
+make lint-feature-map-writer
+make test-activation-buffer lint-activation-buffer
+```
+
+TB接真正activation_buffer。stimulus獨立計算期望地址／資料並排入expected queue；每次wr_en逐筆比較，只有合法預期寫入才更新golden。之後經RAM公開同步讀取埠讀回整片32768筆，包含目的區外sentinel，不以DUT實際地址反過來產生Golden。
+
+測試包括全深度LINEAR、非零base/12channel交錯CHW與固定seed空拍、地址32767單筆、零筆數、65535筆越界、零W/H/C、大尺寸乘積越界、非法c/y/x及部分提交、中途reset取消pending與恢復、真實Conv1尺寸12×30×61(base10080)、busy命令拒收、32channel反向順序。done/error互斥單拍並且不能早於expected queue排空。
+
+本次只驗證writer+RAM和保留RAM單測；未驗證reader、完整推論、DDR、Vivado資源／時序或上板。
+
+實測結果：`PASS feature_map_writer commits=54946 read_checks=163840 success=6 error=10`；writer lint通過。原activation_buffer回歸維持108449次檢查通過，碰撞負向測試與lint通過。
