@@ -11,6 +11,28 @@ ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
 ACTIVATION_PATH_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL) rtl/integration/kws_activation_path.sv
 SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
 SOFTWARE_WEIGHT_DIR ?= ../../layer_weights_int8_pot_ceil_zp128
+S4_CONTROL_RTL := rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv
+S4_RTL = $(ACTIVATION_PATH_RTL) rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv rtl/integration/kws_inference_top.sv
+.PHONY: test-layer-descriptor test-layer-controller test-s4-software lint-s4
+test-layer-descriptor: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-UNUSEDPARAM --top-module tb_layer_descriptor_rom -Mdir $(BUILD_DIR)/layer_descriptor rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv tb/control/tb_layer_descriptor_rom.sv
+	$(BUILD_DIR)/layer_descriptor/Vtb_layer_descriptor_rom
+test-layer-controller: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-UNUSEDPARAM -Wno-BLKSEQ --top-module tb_layer_controller -Mdir $(BUILD_DIR)/layer_controller $(S4_CONTROL_RTL) tb/control/tb_layer_controller.sv
+	$(BUILD_DIR)/layer_controller/Vtb_layer_controller
+lint-s4:
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_inference_top $(S4_RTL)
+test-s4-software: generate-activation-path-vectors | $(BUILD_DIR)
+	@for pipe in 0 1; do \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_kws_s4_software -Mdir $(BUILD_DIR)/s4_$$pipe $(S4_RTL) tb/integration/tb_kws_s4_software.sv || exit $$?; \
+		for seed in 505 128; do \
+			$(BUILD_DIR)/s4_$$pipe/Vtb_kws_s4_software +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$$seed > $(BUILD_DIR)/s4_$$pipe/seed_$$seed.log 2>&1; status=$$?; \
+			cat $(BUILD_DIR)/s4_$$pipe/seed_$$seed.log; test $$status -eq 0 || exit $$status; \
+		done; \
+	done
+	@ulimit -c 0; if $(BUILD_DIR)/s4_0/Vtb_kws_s4_software +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/s4_0/negative_golden.log 2>&1; then echo "FAIL: corrupted S4 golden accepted"; exit 1; else rg -q 'S4 commit mismatch' $(BUILD_DIR)/s4_0/negative_golden.log && echo "PASS expected S4 corrupted-golden rejection"; fi
+test: test-layer-descriptor test-layer-controller
+lint: lint-s4
 .PHONY: generate-activation-path-vectors test-activation-path-vectors test-pe-conv1-pool-memory
 test-activation-path-vectors:
 	python3 scripts/test_activation_path_vectors.py
@@ -258,6 +280,8 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-layer-descriptor / test-layer-controller / lint-s4 - S4 ROM, sequencing and integrated lint"
+	@echo "  make test-s4-software - actual controller-driven FRONTEND/FC_TAIL, two PE8 configurations and seeds"
 	@echo "  make test-activation-path / lint-activation-path - S2 real RAM-reader-pool-writer integration"
 	@echo "  make test-pe-layer-controller / lint-pe-layer-controller - S3 real Reader/RAM/PE/Writer, PE8 pipe=0/1"
 	@echo "  make test-pe-conv1-pool-memory - S3 software golden chain, PE8 pipe=0/1 and two seeds"

@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：S1/S2及S3共享PE/Pool路徑功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S4/S5、Argmax、完整推論及Vivado/板測尚未完成。見[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
+狀態：S1/S2/S3及S4的PE／Pool區段自動排程功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S5、Argmax、完整推論及Vivado/板測尚未完成；S4頂層目前拒絕FULL模式。見[S4控制與驗證](S4_LAYER_SEQUENCER.md)、[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
 
 ## 0. 本文件的目的與使用規則
 
@@ -83,7 +83,7 @@ flowchart TB
 
 ### 模型與初始位址規劃
 
-依目前討論的模型尺寸。此表是規劃，不是已實作的descriptor；若實際checkpoint／shape不同，需先核對更新。
+依目前模型尺寸。此表已實作為S4固定descriptor；若實際checkpoint／shape不同，需先核對更新。包含DCIM descriptor不代表DCIM backend已實作。
 
 | 操作 | 來源base／筆數 | 目的base／筆數 |
 |---|---|---|
@@ -144,12 +144,16 @@ flowchart TB
 
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
-| 未開始 | `rtl/control/layer_descriptor_rom.sv` | 各操作尺寸／base／K／channels／backend／後處理設定 |
-| 未開始 | `rtl/control/layer_controller.sv` | 載入、配置、執行、排空、區域重用與整體done |
-| 未開始 | `rtl/integration/kws_inference_top.sv` | 連接正式系統，外部輸入／權重／啟動／分類結果介面 |
-| 未開始 | `tb/control/tb_layer_controller.sv` | 操作順序、握手、錯誤處理、禁止提早重用來源區 |
+| 模擬通過 | `rtl/control/layer_descriptor_rom.sv` | 九筆固定尺寸／base／K／channels／backend／後處理設定 |
+| 模擬通過（PE／Pool區段） | `rtl/control/layer_controller.sv` | 載入、配置、執行、等commit、區域重用與區段done；FULL拒絕 |
+| 模擬通過（部分系統） | `rtl/integration/kws_inference_top.sv` | 真實path、來源串流／request、啟動與閒置讀回；分類介面待Argmax整合 |
+| 模擬通過 | `tb/control/tb_layer_controller.sv` | 操作順序、握手、錯誤處理、禁止提早前進 |
+| 模擬通過 | `tb/control/tb_layer_descriptor_rom.sv` | 九筆全部欄位及七個非法地址 |
+| 模擬通過 | `tb/integration/tb_kws_s4_software.sv` | 真實RTL，自動FRONTEND／FC_TAIL及失敗reset恢復，軟體golden逐值比對 |
 
 S4可先驗證PE支援的路徑與排程。Conv2／3尚未接上DCIM前，不稱為完整混合推論完成。控制器單測可使用受控stub測協定，但最終系統驗收必須使用真實RTL。
+
+S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前拒絕，不跳過DCIM。外部接受input/weight request後供應恰好指定筆數，path實際load_done才代表載入完成。每個PE層重載權重，不增加快取。整段busy期間禁止外部read插入，包含層間path idle；錯誤鎖定至共同reset。詳[S4指南](S4_LAYER_SEQUENCER.md)。
 
 ### S5：DCIM backend 與完整混合推論
 
@@ -168,7 +172,7 @@ backend詳細mapping、sum統計、tile邊界與CDC時脈需另一步確認；�
 | 驗證通過 | `scripts/generate_activation_path_vectors.py` | 依使用者要求整理真實軟體匯出、獨立數學預檢、hex與manifest；隨機握手seed在TB控制 |
 | 驗證通過 | `scripts/test_activation_path_vectors.py` | 匯出檔格式/metadata/signedness及錯誤資料拒絕，原檔不修改 |
 | 規劃已記錄 | `docs/SINGLE_BUFFER_ARCHITECTURE.md`（本檔） | 唯一的本子系統架構基準、決定與進度 |
-| S3已更新 | `Makefile` | S1/S2/S3 test/lint及真實資料專用入口；保留既有測試 |
+| S4已更新 | `Makefile` | S1/S2/S3/S4 test/lint及真實資料專用入口；保留既有測試 |
 | 未開始 | `vivado/create_activation_path_project.tcl`（新增） | S2後建立統一匯入／資源／時序驗證流程；具體top與板級wrapper先規劃再實作 |
 
 ## 5. 介面語義：已定方向與仍待細化
@@ -237,7 +241,11 @@ stateDiagram-v2
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 | 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **S4：規劃layer_descriptor_rom及layer_controller，依既定分層排程整合**。S3功能模擬已完成；不增加Argmax前置，也不宣稱DCIM或完整CNN已完成。
+下一步為 **S5：先規劃DCIM backend及與共享RAM／controller的介面擴充**。S4的PE／Pool區段自動排程功能模擬已完成；不增加Argmax前置，不直接開放FULL，也不宣稱DCIM或完整CNN已完成。板級wrapper與Vivado驗證仍未執行。
+
+2026-10-05 S4：新增九筆descriptor ROM、跨層controller、部分inference top與三份TB；不改原PE／RAM／Pool RTL。ROM16地址檢查通過；協定單測2個成功區段／5操作／9個錯誤案例通過。真實軟體sample6988，RESULT_PIPELINED=0/1×seed505/128共4次，每次3區段／7操作／5次權重請求；每次98304筆讀回中96120筆已初始化資料比對通過。每筆運算write/read位址與數值／數量亦檢查；單筆golden破壞正確報錯，整合lint通過。FULL與DCIM未支援，FC分支仍由外部flatten開始。詳[S4指南](S4_LAYER_SEQUENCER.md)。
+
+同日S4回歸：重跑Python向量檢查、S3四次軟體整合、S2一般／四Pool軟體測試、PE layer controller兩配置、Reader／Writer／RAM及相關lint全部通過；不代表Vivado或整個repo所有CIM測試已重跑。
 
 2026-10-04 S3第二部分：擴充既有kws_activation_path共用Reader/Writer與activation RAM，加入PE/weight owner與真實load完成後的resident metadata；原S3表格漏列的既有檔案修改已補齊。軟體sample6988，PE8 RESULT_PIPELINED=0/1×seed505/128共4次，每次8個運算、8個預期拒絕、5次成功weight load、327680筆全RAM讀回，全部PASS；中間硬體結果沒有重新載入golden。增加FC1/FC2真實分支、失敗reload/中途reset及FAULT恢复；單筆golden損壞正確被拒絕。Python格式/metadata負向測試、S1/S2/PE controller回歸及lint通過。未執行Vivado/板測，細節見[S3_SHARED_PATH_VERIFICATION.md](S3_SHARED_PATH_VERIFICATION.md)。
 
