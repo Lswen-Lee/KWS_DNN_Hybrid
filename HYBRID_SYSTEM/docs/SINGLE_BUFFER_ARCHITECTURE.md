@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：S1及S2池化路徑已實作，S2測試結果見變更紀錄；Argmax分支、完整推論及Vivado驗證尚未完成。元件關係與操作流程見[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)。
+狀態：S1及S2池化路徑已實作；S3的pe_layer_controller已通過真實Reader/RAM/PE/Writer測試，正式PE/Pool共享top及端到端仍待完成。Argmax、完整推論及Vivado驗證尚未完成。元件關係與操作流程見[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)。
 
 ## 0. 本文件的目的與使用規則
 
@@ -133,7 +133,8 @@ flowchart TB
 
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
-| 未開始 | `rtl/control/pe_layer_controller.sv` | patch/vector調度、保存空間位置、PE命令／replay、結果完成追蹤 |
+| 模擬通過 | `rtl/control/pe_layer_controller.sv` | patch/vector調度、保存空間位置、PE命令／replay、結果完成追蹤 |
+| 模擬通過 | `tb/control/tb_pe_layer_controller.sv` | 真實Reader/RAM/PE/Writer、完整Conv1尺寸與FC replay、拒絕/FAULT/reset；不是完整Conv1→Pool TB |
 | 未開始 | `tb/integration/tb_pe_conv1_pool_memory.sv` | 真實PE、RAM、量化、writer與pool端到端比較 |
 
 驗收：必須接真正 `pe_pot_engine`，不得用輸出Golden的假PE取代。分別讀回Conv1量化結果及Pool結果比對。下一patch需等本patch資料／結果契約完成。額外測FC1的12＋12＋8分組及144筆activation replay；相關TB可於該步細化，但不得漏測。
@@ -234,7 +235,9 @@ stateDiagram-v2
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 | 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **S3：規劃 pe_layer_controller，接入真實PE的Conv1→Pool**。Argmax不是S3前置；不因池化路徑可運作便宣稱完整推論完成。
+下一步為 **S3：正式整合共享top的PE owner與resident metadata，再建立真實PE Conv1→Pool端到端TB**。pe_layer_controller本身已完成。Argmax不是S3前置；不因個別路徑可運作便宣稱完整推論完成。
+
+2026-10-04 S3第一部分：新增pe_layer_controller及真實元件連接TB。PE8 RESULT_PIPELINED=0/1各通過7個正常案例、12個非法命令、2個FAULT、229376筆全RAM讀回；包含1830個Conv1 patches、FC1 K144三次replay、FC K255/Cout24深度510邊界與reset恢復。S1/S2含軟體Pool golden回歸及相關lint通過；Vivado/板測未執行，正式共享top尚未修改。詳見 [PE_LAYER_CONTROLLER.md](PE_LAYER_CONTROLLER.md)。
 
 2026-10-04 S2補強：以軟體 dataset_index=6988 的 quant_input→pool1、relu1/2/3→pool2/3/4 檔案直接作為輸入/golden。四組8568筆輸出與軟體完全一致，131072筆全RAM讀回通過；原測試與lint通過。操作、格式及限制見 [SOFTWARE_POOL_GOLDEN.md](SOFTWARE_POOL_GOLDEN.md)。僅增加TB模式與Makefile入口，不改RTL。同步修正先前誤把Argmax列為S3前置的文字。
 

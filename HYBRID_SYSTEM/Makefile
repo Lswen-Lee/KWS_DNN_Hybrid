@@ -82,6 +82,17 @@ test-result-pipeline-iverilog: | $(BUILD_DIR)
 ENGINE_RTL = $(GROUP_RTL) rtl/control/pe_result_controller.sv rtl/control/pe8_result_controller_pipeline.sv rtl/integration/pe_memory_engine.sv
 POT_STREAM_RTL = $(POT_RTL) rtl/datapath/kws_pot_shift_rom.sv rtl/datapath/pe_pot_result_stream.sv
 POT_ENGINE_RTL = $(ENGINE_RTL) $(POT_STREAM_RTL) rtl/integration/pe_pot_engine.sv
+PE_LAYER_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL)
+.PHONY: test-pe-layer-controller lint-pe-layer-controller
+test: test-pe-layer-controller
+lint: lint-pe-layer-controller
+test-pe-layer-controller: | $(BUILD_DIR)
+	@for pipe in 0 1; do \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_pe_layer_controller -Mdir $(BUILD_DIR)/pe_layer_$$pipe $(PE_LAYER_RTL) tb/control/tb_pe_layer_controller.sv && \
+		$(BUILD_DIR)/pe_layer_$$pipe/Vtb_pe_layer_controller || exit $$?; \
+	done
+lint-pe-layer-controller:
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM --top-module pe_layer_controller rtl/kws_system_pkg.sv rtl/control/pe_layer_controller.sv
 .PHONY: test-pot-engine
 test: test-memory-engine-zp128 test-pot-engine test-pot-stream test-postprocess-pot test-dcim-offset check-engine-elaboration-zp128
 .PHONY: test-pot-stream test-postprocess-pot test-dcim-offset
@@ -233,6 +244,7 @@ lint-layer-weight-loader:
 
 help:
 	@echo "  make test-activation-path / lint-activation-path - S2 real RAM-reader-pool-writer integration"
+	@echo "  make test-pe-layer-controller / lint-pe-layer-controller - S3 real Reader/RAM/PE/Writer, PE8 pipe=0/1"
 	@echo "  make test-activation-reader / lint-activation-reader - LINEAR/PATCH reader, stalls and replay"
 	@echo "  make test-feature-map-writer / lint-feature-map-writer - LINEAR/CHW writer with real activation RAM"
 	@echo "  make test-activation-buffer / lint-activation-buffer - S1 32KiB synchronous activation RAM"
