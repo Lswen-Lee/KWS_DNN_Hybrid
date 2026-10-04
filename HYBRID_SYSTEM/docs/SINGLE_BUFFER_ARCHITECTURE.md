@@ -122,7 +122,7 @@ flowchart TB
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
 | 模擬通過 | `rtl/control/pool_transfer_controller.sv` | 保存來源／目的／W/H/C，管理串流、排空及最後寫入 |
-| 池化路徑模擬通過 | `rtl/integration/kws_activation_path.sv` | 整合buffer／reader／writer／pool及host互斥；argmax保留待辦，不稱全S2完成 |
+| 池化路徑模擬通過 | `rtl/integration/kws_activation_path.sv` | 整合buffer／reader／writer／pool及host互斥；Argmax為後續分類整合，不是S3前置 |
 | 模擬通過 | `tb/integration/tb_kws_activation_path.sv` | 交錯channel載入、池化、寫回、全RAM讀回比較 |
 
 驗收：包含5×3奇數尺寸、61／28／12／126寬度、多channel、非零base；比對所有輸出與目的區外sentinel。pool最後結果產生後仍需消費奇數尾列，完成條件同時涵蓋輸入消費與輸出commit。
@@ -234,7 +234,9 @@ stateDiagram-v2
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 | 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **確認S2池化驗證，再規劃Argmax分支及Vivado整合驗證流程**；真實PE接入仍屬S3，不因本路徑可運作便宣稱完整推論完成。
+下一步為 **S3：規劃 pe_layer_controller，接入真實PE的Conv1→Pool**。Argmax不是S3前置；不因池化路徑可運作便宣稱完整推論完成。
+
+2026-10-04 S2補強：以軟體 dataset_index=6988 的 quant_input→pool1、relu1/2/3→pool2/3/4 檔案直接作為輸入/golden。四組8568筆輸出與軟體完全一致，131072筆全RAM讀回通過；原測試與lint通過。操作、格式及限制見 [SOFTWARE_POOL_GOLDEN.md](SOFTWARE_POOL_GOLDEN.md)。僅增加TB模式與Makefile入口，不改RTL。同步修正先前誤把Argmax列為S3前置的文字。
 
 ## 9. S1 第一批實作：package 與 activation buffer
 
@@ -486,7 +488,7 @@ BRAM推導、最高頻率、資源與板測未驗證。後續外層須管理來�
 - Reader ready不跟隨Writer ready；必須繼續消費奇數尾像素。兩個done各自保存，全部輸入消費及輸出commit才完成。
 - 單一RAM、單一Reader、單一Writer；top管理HOST_LOAD/HOST_READ/POOL互斥，命令競爭POOL>LOAD>READ。
 - 初版沒有Pool輸出FIFO，靠Writer先就緒及端口獨占；遇到pool_valid&&!writer_ready屬FAULT，不吞掉資料後回報成功。
-- 本次不改MaxPool BRAM設計、不增AXI/DDR、不接PE/DCIM/Argmax。S2中的Argmax分支仍待實作。
+- 本次不改MaxPool BRAM設計、不增AXI/DDR、不接PE/DCIM/Argmax。Argmax留待後續分類整合，不屬S2池化驗收門檻。
 - 新增TB接所有真實RTL；正常測試不stub。FAULT案例明確注入下游不ready，與正常計算驗證分開。
 
 驗證結果：`make test-activation-path lint-activation-path`通過，`pool_cases=9 rejected=11 memory_checks=294912`；Reader/Writer/RAM原測試與lint全部重跑通過。初次測試的early-writer布林旗標跨程序記錄失敗，改為單一monitor累計事件並比較案例前後差值，保留原本覆蓋要求，最終確認奇數尾端Writer先完成且Reader繼續讀取；未因此改動控制器。未重跑所有PE/CIM回歸，未執行Vivado。

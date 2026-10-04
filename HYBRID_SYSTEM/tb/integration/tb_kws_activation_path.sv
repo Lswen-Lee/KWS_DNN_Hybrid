@@ -26,6 +26,54 @@ module tb_kws_activation_path;
     integer early_writer_events=0;
     logic [31:0] rng=32'h5052026;
     kws_activation_path dut (.*);
+    string software_root;
+
+    // Software exports are the reference, not an RTL-derived pooling formula.
+    task automatic read_export(input string filename, input integer base_addr, count);
+        integer fd, status;
+        string token;
+        logic [7:0] value;
+        fd=$fopen(filename,"r");
+        if(fd==0) $fatal(1,"Cannot open software export: %s",filename);
+        for(integer i=0;i<count;i++) begin
+            status=$fscanf(fd,"%s",token);
+            if(status!=1 || token.len()!=8) $fatal(1,"Invalid export %s index=%0d",filename,i);
+            value=0;
+            for(integer bit_index=0;bit_index<8;bit_index++) begin
+                if(token[bit_index]!=8'h30 && token[bit_index]!=8'h31)
+                    $fatal(1,"Non-binary export %s index=%0d",filename,i);
+                value={value[6:0],(token[bit_index]==8'h31)};
+            end
+            golden[base_addr+i]=value;
+        end
+        status=$fscanf(fd,"%s",token);
+        if(status==1) $fatal(1,"Extra data in %s",filename);
+        $fclose(fd);
+    endtask
+
+    task automatic software_pool_case(input string input_layer, output_layer,
+                                      input integer b,d,w,h,c);
+        integer check_before;
+        read_export({software_root,"/",input_layer,"/activation_uint8_binary.txt"},b,c*h*w);
+        read_export({software_root,"/",output_layer,"/activation_uint8_binary.txt"},d,c*(h/2)*(w/2));
+        // Exercise CHW addressing with channel-interleaved host writes.
+        load_command(1,b,w,h,c,0);
+        for(integer y=0;y<h;y++) for(integer x=0;x<w;x++) for(integer ch=0;ch<c;ch++)
+            send(ch,y,x,golden[b+ch*h*w+y*w+x]);
+        finish_load();
+        src=b;dst=d;expected_in=c*h*w;expected_out=c*(h/2)*(w/2);
+        pool_reads=0;pool_writes=0;starts=0;
+        start_pool(b,d,w,h,c);checking=1;
+        while(!pool_done && !pool_error) @(negedge clk);
+        checking=0;
+        if(pool_error || fault || pool_reads!=expected_in || pool_writes!=expected_out || starts!=1)
+            $fatal(1,"Software pool completion mismatch: %s",output_layer);
+        check_before=checks;
+        @(negedge clk);scan();
+        cases++;
+        $display("PASS software %s -> %s input=%0d output=%0d RAM_checks=%0d",
+                 input_layer,output_layer,expected_in,expected_out,checks-check_before);
+    endtask
 
     function automatic [7:0] pattern(input integer c,y,x);
         return 8'((c*73+y*29+x*17) ^ (x>>2));
@@ -40,7 +88,9 @@ module tb_kws_activation_path;
         end
         if(dut.w_en) begin
             if(pool_writes>=expected_out || int'(dut.w_addr)!=dst+pool_writes ||
-               dut.w_data!==golden[dst+pool_writes]) $fatal(1,"Pool write mismatch");
+               dut.w_data!==golden[dst+pool_writes])
+                $fatal(1,"Pool write mismatch index=%0d addr=%0d actual=%0d expected=%0d",
+                       pool_writes,dut.w_addr,dut.w_data,golden[dst+pool_writes]);
             pool_writes++;
         end
         if(dut.frame_start) begin
@@ -157,6 +207,15 @@ module tb_kws_activation_path;
         load_command(0,0,0,0,0,32768);
         for(integer a=0;a<32768;a++) begin send(0,0,0,8'ha5);golden[a]=8'ha5;end
         finish_load();
+        if($value$plusargs("SOFTWARE_ROOT=%s",software_root)) begin
+            software_pool_case("quant_input","pool1",0,8064,126,64,1);
+            software_pool_case("relu1","pool2",10080,0,61,30,12);
+            software_pool_case("relu2","pool3",5400,0,28,13,12);
+            software_pool_case("relu3","pool4",1008,0,12,4,12);
+            if(cases!=4 || checks!=131072) $fatal(1,"Software coverage incomplete");
+            $display("PASS software golden: 4 pools, 8568 outputs, 131072 RAM checks");
+            $finish;
+        end else begin
         pool_case(100,200,5,3,2);
         pool_case(0,8064,126,64,1);
         pool_case(10080,0,61,30,12);
@@ -187,6 +246,7 @@ module tb_kws_activation_path;
         if(cases!=9 || rejections!=11 || checks!=294912) $fatal(1,"Coverage missing");
         $display("PASS activation_path pool_cases=%0d rejected=%0d memory_checks=%0d",cases,rejections,checks);
         $finish;
+        end
     end
     initial begin #20000000;$fatal(1,"Watchdog timeout");end
 endmodule

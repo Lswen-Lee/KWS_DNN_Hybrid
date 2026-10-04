@@ -9,7 +9,10 @@ TB_DATAPATH := tb/datapath
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
 ACTIVATION_PATH_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/integration/kws_activation_path.sv
-.PHONY: test-activation-path lint-activation-path
+SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
+.PHONY: test-activation-path lint-activation-path test-activation-path-software
+test-activation-path-software: test-activation-path
+	$(BUILD_DIR)/activation_path/Vtb_kws_activation_path +SOFTWARE_ROOT=$(abspath $(SOFTWARE_ACTIVATION_DIR))
 test: test-activation-path
 lint: lint-activation-path
 test-activation-path: | $(BUILD_DIR)
