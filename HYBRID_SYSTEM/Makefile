@@ -8,18 +8,33 @@ RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
-ACTIVATION_PATH_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/integration/kws_activation_path.sv
+ACTIVATION_PATH_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL) rtl/integration/kws_activation_path.sv
 SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
+SOFTWARE_WEIGHT_DIR ?= ../../layer_weights_int8_pot_ceil_zp128
+.PHONY: generate-activation-path-vectors test-activation-path-vectors test-pe-conv1-pool-memory
+test-activation-path-vectors:
+	python3 scripts/test_activation_path_vectors.py
+generate-activation-path-vectors:
+	python3 scripts/generate_activation_path_vectors.py --activations "$(SOFTWARE_ACTIVATION_DIR)" --weights "$(SOFTWARE_WEIGHT_DIR)"
+test-pe-conv1-pool-memory: generate-activation-path-vectors | $(BUILD_DIR)
+	@for pipe in 0 1; do \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/pe_conv1_pool_$$pipe $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv || exit $$?; \
+		for seed in 505 128; do \
+			$(BUILD_DIR)/pe_conv1_pool_$$pipe/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$$seed > $(BUILD_DIR)/pe_conv1_pool_$$pipe/seed_$$seed.log 2>&1; status=$$?; \
+			cat $(BUILD_DIR)/pe_conv1_pool_$$pipe/seed_$$seed.log; test $$status -eq 0 || exit $$status; \
+		done; \
+	done
+	@ulimit -c 0; if $(BUILD_DIR)/pe_conv1_pool_0/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/pe_conv1_pool_0/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else rg -q 'Commit mismatch' $(BUILD_DIR)/pe_conv1_pool_0/negative_golden.log && echo "PASS expected corrupted-golden rejection"; fi
 .PHONY: test-activation-path lint-activation-path test-activation-path-software
 test-activation-path-software: test-activation-path
 	$(BUILD_DIR)/activation_path/Vtb_kws_activation_path +SOFTWARE_ROOT=$(abspath $(SOFTWARE_ACTIVATION_DIR))
 test: test-activation-path
 lint: lint-activation-path
 test-activation-path: | $(BUILD_DIR)
-	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-PINCONNECTEMPTY --top-module tb_kws_activation_path -Mdir $(BUILD_DIR)/activation_path $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_activation_path.sv
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module tb_kws_activation_path -Mdir $(BUILD_DIR)/activation_path $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_activation_path.sv
 	$(BUILD_DIR)/activation_path/Vtb_kws_activation_path
 lint-activation-path:
-	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM -Wno-PINCONNECTEMPTY --top-module kws_activation_path $(ACTIVATION_PATH_RTL)
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_activation_path $(ACTIVATION_PATH_RTL)
 READER_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv
 .PHONY: test-activation-reader lint-activation-reader
 test: test-activation-reader
@@ -245,6 +260,8 @@ lint-layer-weight-loader:
 help:
 	@echo "  make test-activation-path / lint-activation-path - S2 real RAM-reader-pool-writer integration"
 	@echo "  make test-pe-layer-controller / lint-pe-layer-controller - S3 real Reader/RAM/PE/Writer, PE8 pipe=0/1"
+	@echo "  make test-pe-conv1-pool-memory - S3 software golden chain, PE8 pipe=0/1 and two seeds"
+	@echo "  make generate-activation-path-vectors / test-activation-path-vectors - validate external exports"
 	@echo "  make test-activation-reader / lint-activation-reader - LINEAR/PATCH reader, stalls and replay"
 	@echo "  make test-feature-map-writer / lint-feature-map-writer - LINEAR/CHW writer with real activation RAM"
 	@echo "  make test-activation-buffer / lint-activation-buffer - S1 32KiB synchronous activation RAM"

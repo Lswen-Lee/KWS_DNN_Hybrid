@@ -25,7 +25,14 @@ module tb_kws_activation_path;
     bit checking=0;
     integer early_writer_events=0;
     logic [31:0] rng=32'h5052026;
-    kws_activation_path dut (.*);
+    // S2 regression keeps every new PE/weight command disabled explicitly.
+    kws_activation_path dut (
+        .weight_load_valid(1'b0),.weight_load_ready(),.weight_layer_id(3'd0),
+        .weight_k(8'd0),.weight_channels(6'd0),.weight_valid(1'b0),.weight_ready(),.weight_i8(8'sd0),
+        .weight_load_done(),.weight_load_error(),.resident_valid(),
+        .pe_cmd_valid(1'b0),.pe_cmd_ready(),.pe_is_fc(1'b0),.pe_relu_enable(1'b0),.pe_layer_id(3'd0),
+        .pe_src_base(15'd0),.pe_dst_base(15'd0),.pe_width(8'd0),.pe_height(8'd0),.pe_vector_length(8'd0),
+        .pe_input_channels(6'd0),.pe_output_channels(6'd0),.pe_done(),.pe_error(),.*);
     string software_root;
 
     // Software exports are the reference, not an RTL-derived pooling formula.

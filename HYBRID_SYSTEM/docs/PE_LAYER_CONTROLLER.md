@@ -4,8 +4,7 @@
 `tb/control/tb_pe_layer_controller.sv`。控制器測試連接真正的 Reader、Writer、RAM、
 weight loader、PE array、PoT/ReLU/FIFO；不是用假 PE 輸出 golden。
 
-**完成此控制器不等於 S3 全部完成。** 正式共享 top 的 PE owner、Conv1→Pool 串接與
-相同 checkpoint 的真實資料測試仍待下一步；不加入 Argmax、AXI、DDR、A/B buffer 或 DCIM。
+**控制器單測不等於S3端到端測試。** 後續已完成正式共享top與相同checkpoint的真實資料驗證，見[S3_SHARED_PATH_VERIFICATION.md](S3_SHARED_PATH_VERIFICATION.md)。本文保留控制器本身的分工；不加入Argmax、AXI、DDR、A/B buffer或DCIM。
 
 ## 1. 分工與元件關係
 
@@ -65,7 +64,7 @@ flowchart TB
 
 整個busy期間上層必須禁止Host、Pool或其他工作使用共享Reader/Writer，禁止重新載入權重。
 本控制器檢查resident metadata是否匹配，但不可能自行知道外部偷偷改寫而沒有更新metadata。
-這項互斥是下一步正式top要實作的責任。
+這項互斥由後續整合的kws_activation_path實作，不能只依賴本控制器。
 
 ### 資料連接
 
@@ -240,9 +239,9 @@ PoT shift常數獨立列於TB，不讀DUT ROM取得預期值。
 S1 Reader/Writer/RAM原測試與lint、S2池化整合與四組軟體Pool golden全部回歸通過。
 本次環境沒有Vivado，未執行合成/implementation/上板，也未重跑全部歷史PE/CIM回歸。
 
-## 7. 下一步
+## 7. 後續整合狀態
 
-1. 擴充 `kws_activation_path` 的PE操作所有權、Reader PATCH設定、PE/Pool資料選擇及resident metadata管理；不複製activation RAM。
-2. 建立原規劃的 `tb/integration/tb_pe_conv1_pool_memory.sv`，先比對Conv1(ReLU後)記憶體，再直接用硬體結果做Pool。
-3. 核對真實checkpoint權重/activation的展開順序與量化；軟體pool1→硬體Conv1/ReLU→比對relu1→硬體Pool→比對pool2。
-4. 回歸S1/S2及本控制器測試後，才將S3端到端標為完成；再進行板級top與Vivado實際資源/時序驗證。
+1. 已擴充 `kws_activation_path` 的PE所有權、Reader PATCH、PE/Pool資料選擇與resident metadata；不複製activation RAM。
+2. 已建立 `tb/integration/tb_pe_conv1_pool_memory.sv`，逐層比對真實軟體輸出，直接使用硬體Conv1/ReLU結果做Pool。
+3. S1/S2及本控制器回歸通過，S3功能模擬完成；板級top與Vivado資源/時序仍未驗證。
+4. 下一步依架構基準S4規劃descriptor與全層排程，不將此文件當成額外的重複工作清單。

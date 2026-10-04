@@ -1,8 +1,8 @@
 # Activation 記憶體子系統：元件關係、控制流程與驗證
 
-日期：2026-10-04。本文是S1/S2的閱讀與操作指南；設計基準及分階段清單仍以[架構基準](SINGLE_BUFFER_ARCHITECTURE.md)為準。不是第二份互相競爭的規劃。
+日期：2026-10-04。本文包含S1/S2原操作與S3介面更新；設計基準及分階段清單仍以[架構基準](SINGLE_BUFFER_ARCHITECTURE.md)為準。S3測試詳見 [S3_SHARED_PATH_VERIFICATION.md](S3_SHARED_PATH_VERIFICATION.md)。
 
-目前已有S1三個底層元件及S2池化整合。PE、DCIM、Argmax、全層排程、AXI/DMA、DDR與板級top尚未接入這條路徑，不能把這個top稱為完整KWS推論晶片。
+目前已有S1/S2池化與S3 PE整合。DCIM、Argmax、全層排程、AXI/DMA、DDR與板級top尚未接入，不能把此top稱為完整KWS推論晶片。
 
 ## 1. 檔案與分工
 
@@ -16,7 +16,9 @@
 | `rtl/datapath/activation_reader.sv` | LINEAR/PATCH取值、兩筆回應緩衝、反壓 | 決定下一層 |
 | `rtl/datapath/maxpool2x2_uint8.sv` | 2×2 stride2、UINT8最大值、奇數尾端捨棄 | RAM地址管理、輸出反壓 |
 | `rtl/control/pool_transfer_controller.sv` | 池化配置驗證、先寫後讀啟動、完成事件保存 | 儲存像素、計算最大值 |
-| `rtl/integration/kws_activation_path.sv` | 實例化上述元件、host/pool互斥與資料mux | 板級pin/AXI、全模型推論 |
+| `rtl/integration/kws_activation_path.sv` | 實例化上述元件與PE、host/pool/PE/weight互斥與資料mux | 板級pin/AXI、全模型推論 |
+| `rtl/control/pe_layer_controller.sv` | 整層patch/vector、replay、結果完成 | PE內部MAC/量化 |
+| `rtl/integration/pe_pot_engine.sv` | 真實weight memory、PE、PoT/ReLU、FIFO | Pool、跨層排程 |
 
 RAM/Reader/Writer/MaxPool沒有因S2而修改介面。Pool控制器只傳控制與尺寸；資料mux在integration層。
 
@@ -24,7 +26,7 @@ RAM/Reader/Writer/MaxPool沒有因S2而修改介面。Pool控制器只傳控制�
 
 ```mermaid
 flowchart TB
-  H[外部控制器或TB] --> O[Owner FSM：IDLE/LOAD/READ/POOL]
+  H[外部控制器或TB] --> O[Owner FSM：HOST_IDLE/LOAD/READ/POOL/WEIGHT_LOAD/PE_RUN/FAULT]
   O --> W[共用 Feature Map Writer]
   O --> R[共用 Activation Reader]
   O --> C[Pool Transfer Controller]
@@ -37,11 +39,18 @@ flowchart TB
   R -->|host readback| H
   R -->|CHW像素| P
   P -->|池化結果| W
+  O --> PC[PE Layer Controller]
+  PC --> R
+  PC --> W
+  PC --> PE[PE Engine：MAC＋PoT＋ReLU]
+  H -->|weight load| PE
+  R -->|activation| PE
+  PE -->|UINT8＋channel| W
 ```
 
-權重RAM沒有放進來。MaxPool的line buffer也不是另一份feature-map RAM；它只保存上一列，以組成2×2視窗。當前仍使用原有實作，不宣稱已改為BRAM。
+S3權重RAM位於PE Engine內，與activation RAM分開。MaxPool的line buffer也不是另一份feature-map RAM；它只保存上一列，以組成2×2視窗。當前仍使用原有實作，不宣稱已改為BRAM。
 
-## 3. Top外部介面：三種互斥工作
+## 3. Top外部介面：五種互斥工作
 
 共同規則：命令和資料只在valid&&ready的上升緣被接受；valid且未ready時上游保持payload。reset同步active-high並同時送到所有子模組。RAM不清除。
 
@@ -72,7 +81,7 @@ flowchart TB
 
 ### 仲裁與埠所有權
 
-同拍競爭優先序：POOL > LOAD > READ。只在命令接受時仲裁，不中途搶占。低優先命令必須保持valid直到ready，否則視為撤回而不是已接受。
+同拍競爭優先序：WEIGHT_LOAD > PE_RUN > POOL > HOST_LOAD > HOST_READ。只在命令接受時仲裁，不中途搶占。低優先命令必須保持valid直到ready，否則視為撤回而不是已接受。新PE/weight介面不使用時valid必須接0，不能浮接；S2 TB已明確接0。
 
 | Owner | RAM寫入來源 | RAM讀取用途 | 其他命令 |
 |---|---|---|---|
@@ -80,8 +89,19 @@ flowchart TB
 | HOST_LOAD | Writer接host資料 | 無 | 全部阻擋 |
 | HOST_READ | 無 | Reader送host | 全部阻擋 |
 | POOL | Writer接Pool結果 | Reader送Pool | 全部阻擋 |
+| WEIGHT_LOAD | activation RAM不使用 | 不使用 | 全部阻擋；權重串流可傳 |
+| PE_RUN | Writer接PE結果及CHW座標 | PATCH或LINEAR送PE | 全部阻擋 |
+| FAULT | 禁止寫入 | 可能仍收既有在途回應 | 全部阻擋，須共同reset |
 
-Reader/Writer的terminal脈波由top再登錄一拍，且同時釋放owner；外部看到done時可以準備下一命令。FAULT保留POOL owner、busy=1；不允許新命令進來污染未排空狀態。
+Reader/Writer及PE/Pool控制器的terminal脈波由top再登錄一拍，且正常完成同時釋放owner。FAULT改為獨立owner、busy=1；不允許新命令污染未排空狀態。
+
+### 3.4 WEIGHT_LOAD與3.5 PE_RUN
+
+`weight_load_valid/ready`保存`weight_layer_id/k/channels`；資料用`weight_valid/ready/weight_i8`。
+只有真實loader成功才更新resident_valid及內部metadata；新load、失敗與reset都不能沿用舊有效紀錄。
+`pe_cmd_valid/ready`保存is_fc、layer_id、relu_enable、src/dst、W/H、Cin/Cout、vector_length。
+`pe_done`代表整層寫回，`pe_error`區分設定拒絕或伴隨fault的執行失敗。
+詳細接腳與操作順序見S3驗證文件，保留同clock本地串流，不是AXI或板級pin。
 
 ## 4. 池化數學與範圍檢查
 
@@ -203,8 +223,8 @@ TB根節點`tb_kws_activation_path`，DUT為`dut`：
 
 ## 11. 尚未完成的系統工作
 
-- Argmax未接此top；原S2規劃中的分類分支保留待辦，不宣稱完成。
-- 真實PE的Conv1→RAM→Pool與軟體輸出比對屬S3。
+- Argmax未接此top；留待後續分類整合，不是S3前置。
+- 真實PE的Conv1→RAM→Pool已由S3軟體golden測試驗證，範圍/限制見S3文件。
 - 全層descriptor/controller與DCIM backend分別屬S4/S5。
 - 未建立本路徑板級wrapper、XDC或Vivado專案流程；此top有寬資料介面，不應直接把所有port綁到PYNQ實體pin。
 - 尚未量測LUT/FF/BRAM、125MHz等時序，也沒有板測。配置乘法運算區需由Vivado實測，不能把RTL可模擬視為PPA保證。

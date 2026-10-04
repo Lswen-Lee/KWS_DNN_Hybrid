@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：S1及S2池化路徑已實作；S3的pe_layer_controller已通過真實Reader/RAM/PE/Writer測試，正式PE/Pool共享top及端到端仍待完成。Argmax、完整推論及Vivado驗證尚未完成。元件關係與操作流程見[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)。
+狀態：S1/S2及S3共享PE/Pool路徑功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S4/S5、Argmax、完整推論及Vivado/板測尚未完成。見[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
 
 ## 0. 本文件的目的與使用規則
 
@@ -135,7 +135,8 @@ flowchart TB
 |---|---|---|
 | 模擬通過 | `rtl/control/pe_layer_controller.sv` | patch/vector調度、保存空間位置、PE命令／replay、結果完成追蹤 |
 | 模擬通過 | `tb/control/tb_pe_layer_controller.sv` | 真實Reader/RAM/PE/Writer、完整Conv1尺寸與FC replay、拒絕/FAULT/reset；不是完整Conv1→Pool TB |
-| 未開始 | `tb/integration/tb_pe_conv1_pool_memory.sv` | 真實PE、RAM、量化、writer與pool端到端比較 |
+| 模擬通過 | `tb/integration/tb_pe_conv1_pool_memory.sv` | 真實PE、RAM、量化、writer與pool端到端比較；同checkpoint軟體golden |
+| 模擬通過（修改既有檔案） | `rtl/integration/kws_activation_path.sv` | S3新增PE/weight所有權、resident metadata、Reader/Writer mux；原表只列新增檔案，補齊必要修改項 |
 
 驗收：必須接真正 `pe_pot_engine`，不得用輸出Golden的假PE取代。分別讀回Conv1量化結果及Pool結果比對。下一patch需等本patch資料／結果契約完成。額外測FC1的12＋12＋8分組及144筆activation replay；相關TB可於該步細化，但不得漏測。
 
@@ -164,9 +165,10 @@ backend詳細mapping、sum統計、tile邊界與CDC時脈需另一步確認；�
 
 | 狀態 | 檔案 | 工作 |
 |---|---|---|
-| 未開始 | `scripts/generate_activation_path_vectors.py`（新增） | 獨立Python陣列／數學Golden、固定seed、記憶體初始化與預期輸出 |
+| 驗證通過 | `scripts/generate_activation_path_vectors.py` | 依使用者要求整理真實軟體匯出、獨立數學預檢、hex與manifest；隨機握手seed在TB控制 |
+| 驗證通過 | `scripts/test_activation_path_vectors.py` | 匯出檔格式/metadata/signedness及錯誤資料拒絕，原檔不修改 |
 | 規劃已記錄 | `docs/SINGLE_BUFFER_ARCHITECTURE.md`（本檔） | 唯一的本子系統架構基準、決定與進度 |
-| S1第一批已更新 | `Makefile` | 已增加activation buffer test/lint，其餘隨階段增加；保留既有測試 |
+| S3已更新 | `Makefile` | S1/S2/S3 test/lint及真實資料專用入口；保留既有測試 |
 | 未開始 | `vivado/create_activation_path_project.tcl`（新增） | S2後建立統一匯入／資源／時序驗證流程；具體top與板級wrapper先規劃再實作 |
 
 ## 5. 介面語義：已定方向與仍待細化
@@ -235,7 +237,9 @@ stateDiagram-v2
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 | 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **S3：正式整合共享top的PE owner與resident metadata，再建立真實PE Conv1→Pool端到端TB**。pe_layer_controller本身已完成。Argmax不是S3前置；不因個別路徑可運作便宣稱完整推論完成。
+下一步為 **S4：規劃layer_descriptor_rom及layer_controller，依既定分層排程整合**。S3功能模擬已完成；不增加Argmax前置，也不宣稱DCIM或完整CNN已完成。
+
+2026-10-04 S3第二部分：擴充既有kws_activation_path共用Reader/Writer與activation RAM，加入PE/weight owner與真實load完成後的resident metadata；原S3表格漏列的既有檔案修改已補齊。軟體sample6988，PE8 RESULT_PIPELINED=0/1×seed505/128共4次，每次8個運算、8個預期拒絕、5次成功weight load、327680筆全RAM讀回，全部PASS；中間硬體結果沒有重新載入golden。增加FC1/FC2真實分支、失敗reload/中途reset及FAULT恢复；單筆golden損壞正確被拒絕。Python格式/metadata負向測試、S1/S2/PE controller回歸及lint通過。未執行Vivado/板測，細節見[S3_SHARED_PATH_VERIFICATION.md](S3_SHARED_PATH_VERIFICATION.md)。
 
 2026-10-04 S3第一部分：新增pe_layer_controller及真實元件連接TB。PE8 RESULT_PIPELINED=0/1各通過7個正常案例、12個非法命令、2個FAULT、229376筆全RAM讀回；包含1830個Conv1 patches、FC1 K144三次replay、FC K255/Cout24深度510邊界與reset恢復。S1/S2含軟體Pool golden回歸及相關lint通過；Vivado/板測未執行，正式共享top尚未修改。詳見 [PE_LAYER_CONTROLLER.md](PE_LAYER_CONTROLLER.md)。
 
