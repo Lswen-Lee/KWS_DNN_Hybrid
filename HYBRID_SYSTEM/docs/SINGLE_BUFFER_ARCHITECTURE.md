@@ -2,7 +2,7 @@
 
 基準版本：v1.0（2026-10-03）
 
-狀態：S1 package、activation buffer、writer、reader及其TB已實作；尚未完成S2池化整合、完整推論或Vivado驗證。
+狀態：S1及S2池化路徑已實作，S2測試結果見變更紀錄；Argmax分支、完整推論及Vivado驗證尚未完成。元件關係與操作流程見[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)。
 
 ## 0. 本文件的目的與使用規則
 
@@ -121,9 +121,9 @@ flowchart TB
 
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
-| 未開始 | `rtl/control/pool_transfer_controller.sv` | 保存來源／目的／W/H/C，管理串流、排空及最後寫入 |
-| 未開始 | `rtl/integration/kws_activation_path.sv` | 整合buffer／reader／writer／pool／argmax；各階段分配埠所有權 |
-| 未開始 | `tb/integration/tb_kws_activation_path.sv` | 寫入整張圖、讀取池化、寫回、讀回完整結果比較 |
+| 模擬通過 | `rtl/control/pool_transfer_controller.sv` | 保存來源／目的／W/H/C，管理串流、排空及最後寫入 |
+| 池化路徑模擬通過 | `rtl/integration/kws_activation_path.sv` | 整合buffer／reader／writer／pool及host互斥；argmax保留待辦，不稱全S2完成 |
+| 模擬通過 | `tb/integration/tb_kws_activation_path.sv` | 交錯channel載入、池化、寫回、全RAM讀回比較 |
 
 驗收：包含5×3奇數尺寸、61／28／12／126寬度、多channel、非零base；比對所有輸出與目的區外sentinel。pool最後結果產生後仍需消費奇數尾列，完成條件同時涵蓋輸入消費與輸出commit。
 
@@ -232,8 +232,9 @@ stateDiagram-v2
 | 2026-10-03 | S1第一批 | package、BRAM導向activation buffer、TB及DDR分層說明 | Verilator 5.030模擬108449次檢查通過，讀70607／寫37908；碰撞負向測試及lint通過。未執行Vivado／板測 |
 | 2026-10-03 | S1第二批 | feature_map_writer、真實RAM整合TB及Makefile | Verilator 5.030：54946次寫入、163840筆讀回、6個成功命令與10個預期錯誤；writer lint及原RAM測試/lint通過。未執行Vivado／板測 |
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
+| 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **S2：規劃pool_transfer_controller與kws_activation_path**；不把S1測試當成S2或完整系統完成。
+下一步為 **確認S2池化驗證，再規劃Argmax分支及Vivado整合驗證流程**；真實PE接入仍屬S3，不因本路徑可運作便宣稱完整推論完成。
 
 ## 9. S1 第一批實作：package 與 activation buffer
 
@@ -472,3 +473,20 @@ TB透過RAM寫入埠初始化全部32768筆；獨立用完整數學公式產生�
 BRAM推導、最高頻率、資源與板測未驗證。後續外層須管理來源已初始化、讀寫區域不重疊、跨時脈CDC及MaxPool無out_ready的約束。本Reader不提供DDR/AXI或任意多拍RAM延遲相容性。
 
 實測：15個成功命令、10個預期拒絕、34284次RAM請求、34281筆輸出、889次停頓保持檢查。差額3筆為reset刻意取消，TB另外檢查此差額。持續ready案例檢查首筆後每拍一筆。原writer回歸54946次commit／163840筆讀回通過；RAM回歸108449次檢查與碰撞負向測試通過；三個模組lint通過。未重跑所有PE/CIM系統回歸。
+
+## 12. S2 池化控制與整合（2026-10-04）
+
+詳細元件關係、狀態圖、介面、逐拍流程與波形路徑統整至[ACTIVATION_PATH_CONTROL_GUIDE.md](ACTIVATION_PATH_CONTROL_GUIDE.md)。本節保留基準決定，避免與閱讀指南的角色混淆。
+
+- 池化控制器：IDLE→CONFIG(3拍)→START_WRITER→WAIT_WRITER_READY→START_READER→RUN→DRAIN→IDLE；執行期錯誤另進FAULT，需全路徑reset。
+- Reader及Writer於Pool操作都用LINEAR，利用MaxPool輸出天然CHW順序；host載入仍可用CHW。
+- W=2..126、H=2..255、C=1..31；拒絕零輸出尺寸，C=32不截位。
+- 使用32-bit端點檢查範圍與來源/目的重疊，命令非法時不啟動子模組。
+- Writer in_ready後才啟動Reader；首次pixel握手同拍frame_start。
+- Reader ready不跟隨Writer ready；必須繼續消費奇數尾像素。兩個done各自保存，全部輸入消費及輸出commit才完成。
+- 單一RAM、單一Reader、單一Writer；top管理HOST_LOAD/HOST_READ/POOL互斥，命令競爭POOL>LOAD>READ。
+- 初版沒有Pool輸出FIFO，靠Writer先就緒及端口獨占；遇到pool_valid&&!writer_ready屬FAULT，不吞掉資料後回報成功。
+- 本次不改MaxPool BRAM設計、不增AXI/DDR、不接PE/DCIM/Argmax。S2中的Argmax分支仍待實作。
+- 新增TB接所有真實RTL；正常測試不stub。FAULT案例明確注入下游不ready，與正常計算驗證分開。
+
+驗證結果：`make test-activation-path lint-activation-path`通過，`pool_cases=9 rejected=11 memory_checks=294912`；Reader/Writer/RAM原測試與lint全部重跑通過。初次測試的early-writer布林旗標跨程序記錄失敗，改為單一monitor累計事件並比較案例前後差值，保留原本覆蓋要求，最終確認奇數尾端Writer先完成且Reader繼續讀取；未因此改動控制器。未重跑所有PE/CIM回歸，未執行Vivado。

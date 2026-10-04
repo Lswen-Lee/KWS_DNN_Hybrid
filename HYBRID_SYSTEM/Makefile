@@ -8,6 +8,15 @@ RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
+ACTIVATION_PATH_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/integration/kws_activation_path.sv
+.PHONY: test-activation-path lint-activation-path
+test: test-activation-path
+lint: lint-activation-path
+test-activation-path: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-PINCONNECTEMPTY --top-module tb_kws_activation_path -Mdir $(BUILD_DIR)/activation_path $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_activation_path.sv
+	$(BUILD_DIR)/activation_path/Vtb_kws_activation_path
+lint-activation-path:
+	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM -Wno-PINCONNECTEMPTY --top-module kws_activation_path $(ACTIVATION_PATH_RTL)
 READER_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv
 .PHONY: test-activation-reader lint-activation-reader
 test: test-activation-reader
@@ -220,6 +229,7 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-activation-path / lint-activation-path - S2 real RAM-reader-pool-writer integration"
 	@echo "  make test-activation-reader / lint-activation-reader - LINEAR/PATCH reader, stalls and replay"
 	@echo "  make test-feature-map-writer / lint-feature-map-writer - LINEAR/CHW writer with real activation RAM"
 	@echo "  make test-activation-buffer / lint-activation-buffer - S1 32KiB synchronous activation RAM"
