@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-05工作順序決定：**先完成架構，再評估FSM／介面／面積最佳化**。候選及驗收条件見[延後最佳化清單](DEFERRED_OPTIMIZATION_BACKLOG.md)，全部暫緩、未實作，不得在S5整合時順便套用。正確性錯誤或實測整合阻礙需另提最小修正，不以暫緩為由忽略。
+
 狀態：S1/S2/S3及S4的PE／Pool區段自動排程功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S5、Argmax、完整推論及Vivado/板測尚未完成；S4頂層目前拒絕FULL模式。見[S4控制與驗證](S4_LAYER_SEQUENCER.md)、[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
 
 ## 0. 本文件的目的與使用規則
