@@ -4,7 +4,7 @@
 
 2026-10-05工作順序決定：**先完成架構，再評估FSM／介面／面積最佳化**。候選及驗收条件見[延後最佳化清單](DEFERRED_OPTIMIZATION_BACKLOG.md)，全部暫緩、未實作，不得在S5整合時順便套用。正確性錯誤或實測整合阻礙需另提最小修正，不以暫緩為由忽略。
 
-狀態：S1/S2/S3及S4的PE／Pool區段自動排程功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S5、Argmax、完整推論及Vivado/板測尚未完成；S4頂層目前拒絕FULL模式。見[S4控制與驗證](S4_LAYER_SEQUENCER.md)、[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
+狀態：S1/S2/S3及S4的PE／Pool區段自動排程功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S5-A單patch backend已實作、同時脈真實chip功能模擬通過；S5-B/C/D、Argmax整合、完整推論及Vivado/板測尚未完成；S4頂層目前拒絕FULL模式。見[S5-A設計與驗證](S5A_DCIM_BACKEND.md)、[S4控制與驗證](S4_LAYER_SEQUENCER.md)、[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
 
 ## 0. 本文件的目的與使用規則
 
@@ -34,7 +34,7 @@
 | MaxPool | 先沿用現有 `maxpool2x2_uint8.sv`；不在本里程碑自行改 BRAM 或改成四值比較器 |
 | 第一個里程碑 | 交錯 channel 資料寫成 CHW → RAM 讀取 → 真正 MaxPool → 另一區域寫回 → 全結果比對 |
 | 後續順序 | 先記憶體與後處理，再真實 PE，再 DCIM backend，再完整混合推論 |
-| 最終計算分配方向 | Conv1／FC1／FC2 使用 PE；Conv2／Conv3 使用 DCIM；backend 尚需實作驗證 |
+| 最終計算分配方向 | Conv1／FC1／FC2 使用 PE；Conv2／Conv3 使用 DCIM；S5-A單patch通過，跨域與整層整合尚待完成 |
 | A/B buffer | 完成單一 buffer 基準並量測後才另行評估，不在此版偷偷加入 |
 
 「單一 buffer」與「同一位址原地覆寫」不同。本版不依賴特殊原地池化／卷積排程。
@@ -163,11 +163,13 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
-| 未開始 | `rtl/dcim_adapter/kws_dcim_backend.sv` | 寫權重、mapping、tile、pin命令、原始結果重組與數值修正 |
-| 未開始 | `tb/integration/tb_kws_dcim_backend.sv` | 真實master／chip模型，權重寫入到INT32結果驗證 |
+| S5-A功能模擬通過 | `rtl/dcim_adapter/kws_dcim_backend.sv` | 固定108×12；單筆write、mapping、tile、命令、結果重組／修正／四組累加；未接CDC或整層 |
+| S5-A功能模擬通過 | `tb/integration/tb_kws_dcim_backend.sv` | 真實master／chip，權重寫入／讀回到INT32；同時脈transport，非CDC驗收 |
 | 未開始 | `tb/integration/tb_kws_inference_top.sv` | 全層記憶體結果及最後分類比對 |
 
-backend詳細mapping、sum統計、tile邊界與CDC時脈需另一步確認；不得把單一offset correction模組稱為完整backend。最終正式分配仍為Conv1／FC1／FC2在PE，Conv2／Conv3在DCIM。
+2026-10-13使用者確認後實作S5-A：每層1296有效bytes加240 padding，row=k、pair=filter、Wu=Ws+128；group優先，每組32-byte activation重用於12個pair命令，最後12+20 padding=128。保存48份ΣWu與12份INT32跨group部分和；不變更chip/master。九個FSM狀態合併INIT/NEXT/DONE，保留registered修正器。make test-dcim-backend/lint-dcim-backend為專用入口。細節與實測見[S5-A](S5A_DCIM_BACKEND.md)。這是本次明確授權的新backend流程，不套用既有模組的延後最佳化清單。
+
+下一步S5-B接既有CDC，仍用單筆weight write；S5-C整層Reader/PoT/Writer與真實軟體數據；S5-D FULL與Argmax。CDC時脈/約束尚待確認，不因S5-A測試而宣稱跨域或完整推論通過。最終分配仍為Conv1／FC1／FC2在PE，Conv2／Conv3在DCIM。
 
 ### 共用驗證／文件／Vivado工作
 
@@ -245,7 +247,7 @@ stateDiagram-v2
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 | 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **S5：先規劃DCIM backend及與共享RAM／controller的介面擴充**。S4的PE／Pool區段自動排程功能模擬已完成；不增加Argmax前置，不直接開放FULL，也不宣稱DCIM或完整CNN已完成。板級wrapper與Vivado驗證仍未執行。
+下一步為 **S5-B：在S5-A單patch backend上接入既有CDC並驗證雙時脈**，再於S5-C擴充共享RAM／controller整層介面。S4的PE／Pool區段自動排程功能模擬已完成；不增加Argmax前置，不直接開放FULL，也不宣稱完整CNN已完成。板級wrapper與Vivado驗證仍未執行。
 
 2026-10-05 S4：新增九筆descriptor ROM、跨層controller、部分inference top與三份TB；不改原PE／RAM／Pool RTL。ROM16地址檢查通過；協定單測2個成功區段／5操作／9個錯誤案例通過。真實軟體sample6988，RESULT_PIPELINED=0/1×seed505/128共4次，每次3區段／7操作／5次權重請求；每次98304筆讀回中96120筆已初始化資料比對通過。每筆運算write/read位址與數值／數量亦檢查；單筆golden破壞正確報錯，整合lint通過。FULL與DCIM未支援，FC分支仍由外部flatten開始。詳[S4指南](S4_LAYER_SEQUENCER.md)。
 

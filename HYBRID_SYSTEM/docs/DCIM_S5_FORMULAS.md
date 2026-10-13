@@ -1,8 +1,8 @@
 # DCIM S5：數學公式、權重映射與實際資料順序
 
-更新：2026-10-13。用途：論文與簡報的推導筆記，不是已完成的 S5 驗收報告。
+更新：2026-10-13。用途：論文與簡報的推導筆記，不是完整 S5 驗收報告。當日後續已實作S5-A，單patch跨group累加驗證見[S5-A設計與測試](S5A_DCIM_BACKEND.md)；本文原始推導與其餘整層規劃仍保留。
 
-範圍：UINT8 activation、zero-point=128、signed INT8 weight、無 bias。既有 chip/master 已有 bit-serial 與序列結果路徑；跨 group signed 累加及整層 backend 仍是 S5 規劃。本文沒有更動 RTL。
+範圍：UINT8 activation、zero-point=128、signed INT8 weight、無 bias。既有 chip/master 已有 bit-serial 與序列結果路徑；跨 group signed 累加已於S5-A實作，整層整合仍待完成。公式文件本身不更動 RTL。
 
 ## 1. 符號與卷積
 
@@ -18,7 +18,7 @@ FC 同樣是點積，只是不再以滑動空間視窗取得輸入：
 
 $$Y_f^{FC}=\sum_{k=0}^{K-1}(A_{u,k}-128)W_{s,f,k}.$$
 
-## 2. 容量與映射（建議方案）
+## 2. 容量與映射（S5-A已採用）
 
 每個 bank 為 32×4 bits；同一 group 的一個 pair 保存32個8-bit權重。四個 groups、每組16個pairs，共64個實體pair區塊、2048 bytes。
 
@@ -151,7 +151,7 @@ Conv2：364個patch、17472次CIM命令；Conv3：48個patch、2304次。命令�
 
 ## 9. 驗證與論文使用限制
 
-本文件核對現有RTL順序，並以獨立整數計算檢查例子及分組/位元重排恆等式；不是本次新跑RTL或Vivado通過的宣告。S5跨group/backend仍待實作驗證。
+本公式文件原始驗證為核對RTL順序，並以獨立整數計算檢查例子及分組/位元重排恆等式；後續S5-A已另跑真實chip整合模擬，結果記錄於S5-A文件。完整S5及Vivado尚未驗證。
 
 未來驗收須比較：寫入讀回、各plane sums、兩條ACC、18-bit序列重建、signed修正、四組累加、量化結果與RAM地址；使用真實chip/master，不以golden輸出替代DUT。
 

@@ -7,6 +7,17 @@ BUILD_DIR := build
 RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
+# S5-A uses the real chip hierarchy, not an arithmetic response stub.
+DCIM_BACKEND_RTL := rtl/dcim_adapter/dcim_u8_offset_correction.sv rtl/dcim_adapter/kws_dcim_backend.sv
+DCIM_CHIP_RTL := $(wildcard ../CIM_CHIP/cell/*.sv ../CIM_CHIP/segment/*.sv ../CIM_CHIP/array/*.sv ../CIM_CHIP/peripheral/*.sv ../CIM_CHIP/chip/*.sv) ../CIM_CHIP/fpga/dcim_pin_master.sv
+.PHONY: test-dcim-backend lint-dcim-backend
+lint-dcim-backend:
+	$(VERILATOR) --lint-only -Wall --top-module kws_dcim_backend $(DCIM_BACKEND_RTL)
+test-dcim-backend: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-SYNCASYNCNET -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY -Wno-UNUSEDPARAM --top-module tb_kws_dcim_backend -Mdir $(BUILD_DIR)/dcim_backend $(DCIM_BACKEND_RTL) $(DCIM_CHIP_RTL) tb/integration/tb_kws_dcim_backend.sv
+	@for seed in 505 128; do $(BUILD_DIR)/dcim_backend/Vtb_kws_dcim_backend +SEED=$$seed +verilator+seed+$$seed > $(BUILD_DIR)/dcim_backend/seed_$$seed.log 2>&1; status=$$?; cat $(BUILD_DIR)/dcim_backend/seed_$$seed.log; test $$status -eq 0 || exit $$status; done
+	@ulimit -c 0; if $(BUILD_DIR)/dcim_backend/Vtb_kws_dcim_backend +CORRUPT_GOLDEN > $(BUILD_DIR)/dcim_backend/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else rg -q 'result mismatch' $(BUILD_DIR)/dcim_backend/negative_golden.log && echo "PASS expected S5-A corrupted-golden rejection"; fi
+
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
 ACTIVATION_PATH_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL) rtl/integration/kws_activation_path.sv
 SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
@@ -293,6 +304,7 @@ help:
 	@echo "  make test-pot-engine / test-pot-stream - end-to-end PE/PoT and elastic result path"
 	@echo "  make test-postprocess-pot / test-dcim-offset - frame postprocessing and standalone DCIM correction"
 	@echo "  make test-requantizer-pot-exports - software bytes and model shift ROM consistency"
+	@echo "  make test-dcim-backend / lint-dcim-backend - S5-A real chip single-patch backend, two seeds and negative golden"
 	@echo "HYBRID_SYSTEM verification targets"
 	@echo "  make test-result-pipeline / lint-result-pipeline / test-result-pipeline-iverilog - standalone PE8 result pipeline"
 	@echo "  make test-memory-engine / lint-memory-engine - PE9, PE8 compact, PE8 pipeline engine"
