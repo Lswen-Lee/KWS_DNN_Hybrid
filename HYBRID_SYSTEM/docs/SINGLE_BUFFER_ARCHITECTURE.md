@@ -159,7 +159,7 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 
 ### S5：DCIM backend 與完整混合推論
 
-2026-10-13：新增[公式與資料順序筆記](DCIM_S5_FORMULAS.md)，記錄卷積映射、MSB-first累加、序列輸出、unsigned修正及S5跨group累加建議。僅文件與獨立數學檢查，未實作backend、未改RTL、未更新S5驗收狀態。
+歷史紀錄（2026-10-13，S5-A實作前）：新增[公式與資料順序筆記](DCIM_S5_FORMULAS.md)，當時僅文件與獨立數學檢查。當日後續已實作backend，目前狀態以下表及S5-A驗證文件為準。
 
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
@@ -170,6 +170,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 2026-10-13使用者確認後實作S5-A：每層1296有效bytes加240 padding，row=k、pair=filter、Wu=Ws+128；group優先，每組32-byte activation重用於12個pair命令，最後12+20 padding=128。保存48份ΣWu與12份INT32跨group部分和；不變更chip/master。九個FSM狀態合併INIT/NEXT/DONE，保留registered修正器。make test-dcim-backend/lint-dcim-backend為專用入口。細節與實測見[S5-A](S5A_DCIM_BACKEND.md)。這是本次明確授權的新backend流程，不套用既有模組的延後最佳化清單。
 
 下一步S5-B接既有CDC，仍用單筆weight write；S5-C整層Reader/PoT/Writer與真實軟體數據；S5-D FULL與Argmax。CDC時脈/約束尚待確認，不因S5-A測試而宣稱跨域或完整推論通過。最終分配仍為Conv1／FC1／FC2在PE，Conv2／Conv3在DCIM。
+
+2026-10-13追加S5-A測試：兩seed的CIM LOAD／SAMPLE、修正valid待消費、EMIT反壓四位置共同reset及重新載入恢復均PASS；reset後觀察120拍無殘留。新增無額外source/transport/result停頓案例，load=12289、patch=4729 clocks（含TB固定轉接開銷）。只改TB／文件，未改RTL；完整命令、範圍及結果見S5-A文件第8節。
 
 ### 共用驗證／文件／Vivado工作
 

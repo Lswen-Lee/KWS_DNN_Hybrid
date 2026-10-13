@@ -24,6 +24,7 @@ module tb_kws_dcim_backend;
     // Test-only one-outstanding transport. It delays commands/responses but
     // obtains every successful result from the real pin master, never a model.
     logic gate=1, in_flight=0, pending=0;
+    bit no_stalls=0;
     integer delay_left=0, cycles=0;
     logic inject_error=0, inject_missing_data=0;
     logic debug_mode=0, debug_start=0;
@@ -81,7 +82,7 @@ module tb_kws_dcim_backend;
     logic [276:0] held_cmd;
     integer seed=505;
     integer random_dummy;
-    always @(negedge clk) gate=($urandom_range(0,3)!=0);
+    always @(negedge clk) gate=no_stalls || ($urandom_range(0,3)!=0);
     always @(posedge clk) begin : monitor
         integer f,r,g,a,w;
         cycles=cycles+1;
@@ -146,7 +147,8 @@ module tb_kws_dcim_backend;
         end else begin
             if(cmd_valid && cmd_ready) in_flight<=1;
             if(in_flight && master_done) begin
-                in_flight<=0; pending<=1; delay_left<=$urandom_range(0,4);
+                in_flight<=0; pending<=1;
+                delay_left<=no_stalls ? 0 : $urandom_range(0,4);
                 rsp_error<=master_error || inject_error;
                 rsp_data_valid<=master_result_valid && !inject_missing_data;
                 rsp_even_raw_result<=master_even; rsp_odd_raw_result<=master_odd;
@@ -159,8 +161,8 @@ module tb_kws_dcim_backend;
         end
     end
 
-    task automatic reset_all;
-        @(negedge clk);
+    task automatic reset_all(input bit already_at_negedge=0);
+        if(!already_at_negedge) @(negedge clk);
         rst=1; load_valid=0; patch_valid=0; weight_valid=0; activation_valid=0;
         result_ready=0; source_error=0; debug_mode=0; debug_start=0;
         inject_error=0; inject_missing_data=0;
@@ -191,7 +193,7 @@ module tb_kws_dcim_backend;
         @(negedge clk); load_valid=0; patch_valid=0;
         for(f=0;f<12;f=f+1)
             for(k=0;k<108;k=k+1) begin
-                repeat($urandom_range(0,2)) @(negedge clk);
+                if(!no_stalls) repeat($urandom_range(0,2)) @(negedge clk);
                 weight_valid=1; weight_data=8'(weights[f][k]);
                 do @(posedge clk); while(!weight_ready);
                 @(negedge clk); weight_valid=0;
@@ -239,23 +241,77 @@ module tb_kws_dcim_backend;
         if($test$plusargs("CORRUPT_GOLDEN")) expected[0]=expected[0]+1;
         @(negedge clk);
         cim_count=0; result_count=0; activation_count=0; patch_start_cycle=cycles; patch_valid=1;
+        result_ready=no_stalls;
         do @(posedge clk); while(!patch_ready);
         @(negedge clk); patch_valid=0;
         for(k=0;k<108;k=k+1) begin
-            repeat($urandom_range(0,3)) @(negedge clk);
+            if(!no_stalls) repeat($urandom_range(0,3)) @(negedge clk);
             activation_data=8'(acts[k]); activation_valid=1;
             do @(posedge clk); while(!activation_ready);
             @(negedge clk); activation_valid=0;
         end
         wait(result_valid);
-        repeat(8) @(negedge clk); // Deliberate backpressure on first result.
+        if(!no_stalls) repeat(8) @(negedge clk); // Deliberate backpressure on first result.
         while(!patch_done) begin
-            result_ready=($urandom_range(0,2)!=0);
+            result_ready=no_stalls || ($urandom_range(0,2)!=0);
             @(negedge clk);
         end
         result_ready=0;
         if(result_count!=12 || cim_count!=48 || error) $fatal(1,"patch counts wrong");
-        $display("PASS patch pattern=%0d CIM=%0d outputs=%0d cycles=%0d",pattern,cim_count,result_count,cycles-patch_start_cycle);
+        $display("PASS patch pattern=%0d no_stalls=%0d CIM=%0d outputs=%0d cycles=%0d",pattern,no_stalls,cim_count,result_count,cycles-patch_start_cycle);
+    endtask
+
+    // Observe real activity to select the reset edge; never force DUT state.
+    // 0: LOAD in flight, 1: SAMPLE about to latch, 2: correction valid pending
+    // consumption, 3: EMIT with valid result held under backpressure.
+    task automatic reset_during_patch(input integer phase);
+        integer k,f,count;
+        for(k=0;k<108;k=k+1) acts[k]=(k*19+7)%256;
+        for(f=0;f<12;f=f+1) begin
+            expected[f]=0;
+            for(k=0;k<108;k=k+1) expected[f]+=(acts[k]-128)*weights[f][k];
+        end
+        @(negedge clk);
+        cim_count=0; result_count=0; activation_count=0;
+        patch_valid=1; result_ready=0;
+        do @(posedge clk); while(!patch_ready);
+        @(negedge clk); patch_valid=0;
+        count=(phase==3) ? 108 : 32;
+        for(k=0;k<count;k=k+1) begin
+            activation_valid=1; activation_data=8'(acts[k]);
+            do @(posedge clk); while(!activation_ready);
+            @(negedge clk); activation_valid=0;
+        end
+        case(phase)
+            0: begin
+                while(!(master_busy && chip_mode_sel && chip_clk_en)) @(negedge clk);
+            end
+            1: begin
+                while(!(master_busy && chip_output_en)) @(negedge clk);
+            end
+            2: begin
+                while(!(dut.correction_pending && dut.correction_valid)) @(negedge clk);
+            end
+            3: begin
+                while(!result_valid) @(negedge clk);
+                repeat(20) begin
+                    @(negedge clk);
+                    if(!result_valid || result_ready || patch_done || result_count!=0)
+                        $fatal(1,"EMIT reset precondition violated");
+                end
+            end
+            default: $fatal(1,"invalid reset phase");
+        endcase
+        if(!busy || result_count!=0) $fatal(1,"reset target not active");
+        reset_all(1); // Assert now, before the next sampling edge.
+        // Longer than a normal master operation: no late completion may leak.
+        repeat(120) begin
+            @(negedge clk);
+            if(cmd_valid || rsp_valid || master_done || result_valid || patch_done ||
+               load_done || weights_ready || patch_ready || busy || error)
+                $fatal(1,"stale activity after reset phase=%0d",phase);
+        end
+        $display("PASS reset phase=%0d reached; 120 clocks without stale result/done",phase);
     endtask
 
     initial begin
@@ -306,6 +362,17 @@ module tb_kws_dcim_backend;
         if(result_valid || patch_done || weights_ready) $fatal(1,"missing CIM data accepted");
         reset_all();
         $display("PASS S5-A real chip integration: 3 loads, 3072 readbacks, 6 patches, 288 CIM commands, 72 INT32 results; faults/reset recovery");
+        check_enabled=1;
+        no_stalls=1;
+        $display("BEGIN no-extra-stall and targeted reset extension");
+        load_layer(0);
+        run_patch(0); run_patch(3);
+        for(integer phase=0;phase<4;phase=phase+1) begin
+            reset_during_patch(phase);
+            load_layer(phase%2);
+            run_patch(phase); // Full independent golden check after each reset.
+        end
+        $display("PASS extension: 5 loads, 6 successful patches/72 results, 4 targeted resets with reload/recompute recovery");
         $finish;
     end
     initial begin

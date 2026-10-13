@@ -147,3 +147,40 @@ make test-dcim-backend
 Vivado synthesis/implementation、PYNQ-Z2上板與真正軟體Conv2/3完整golden尚未執行。報告不得將lint當成Vivado合成，或單時脈test當成CDC通過。
 
 S5-B：接既有CDC、雙時脈reset與握手驗證。S5-C：真實軟體Conv2/3完整patch、PoT/ReLU/Pool與CHW commit。S5-D：FULL及Argmax。目前不開放FULL。
+
+## 8. 2026-10-13追加：計算／輸出reset與無額外停頓
+
+僅修改TB與文件，不修改backend/master/chip RTL。原有隨機測試及負向golden保留，`make test-dcim-backend`會接續執行本節案例。
+
+### 無額外停頓的定義
+
+`no_stalls=1`時，關閉source的隨機空拍、cmd gate的隨機封鎖與transport的隨機回應延遲，result_ready從patch開始即保持1。每次輸入握手後下一筆立即準備，ready=0時仍遵守資料保持規則。
+
+這不是讓cmd_ready違反master busy而強制為1；單筆命令的正常往返、TB轉接器的固定暫存拍與chip的LOAD/SAMPLE/serial時間仍存在。此數據只代表本同時脈測試連接的無額外停頓基準，不是CDC或物理最高吞吐率。
+
+### 定點reset案例
+
+| phase | 觸發條件（在negedge觀察並assert reset） | 檢查目的 |
+|---|---|---|
+| 0 | master_busy、mode_sel、clk_en有效 | 真正CIM LOAD途中中止 |
+| 1 | master_busy、output_en有效 | SAMPLE正緣前中止，不再接受舊sample |
+| 2 | correction_pending與correction_valid同時有效 | 修正結果已產生、尚未累加時中止 |
+| 3 | result_valid保持、result_ready=0達20拍 | 輸出第一筆反壓時中止，不能漏出舊結果 |
+
+TB用既有命令與activation串流抵達目標；phase2僅觀察修正器valid，沒有force內部狀態。32筆可觸發前三種案例，phase3送完整108筆並完成48次CIM後才reset。中止前沿用原始命令/raw/result scoreboard，reset期間清除其stalled追蹤以符合reset可撤销valid的協定。
+
+每個phase都對backend/transport/master/chip共同reset，接著觀察120 clocks：不得出現cmd_valid、rsp_valid、master_done、result_valid、patch_done或load_done；weights_ready與patch_ready保持0。然後重新寫入整層權重，再跑完整patch，12筆結果逐值對獨立golden。
+
+本節每seed新增5次load、6個完整成功patch、4個中止patch；中止patch的部分CIM命令不算進成功patch統計。沒有測試单邊reset；那不屬目前協定。
+
+追加結果：`make lint-dcim-backend`及`make test-dcim-backend`均PASS，seed505/128均到達四個reset觸發位置，reset後120拍無殘留，四次reload/recompute recovery均通過。原有隨機案例與corrupted-golden拒絕亦再次通過。
+
+| 新增案例（兩seed合計） | 結果 |
+|---|---|
+| 四種定點reset | 8次通過；未以force略過控制流程 |
+| 無额外停頓load | 10次通過；每次1536次write，12289 clocks |
+| 無額外停頓完整patch（含恢復） | 12次通過；每次48 CIM／12 INT32，4729 clocks |
+
+本次總回歸含原案例：每seed8 loads、12成功patch及4中止patch；兩seed共16 loads、24成功patch／288筆INT32，既有6144筆SRAM讀回保留。中止案例的CIM不計入成功patch的1152次CIM統計。
+
+Cycle沿用TB從操作發起至觀察完成的計數邊界，含固定轉接器與觀察開銷，不是純chip核心cycle；沒有改RTL，因此不能將它與先前帶隨機停頓的約5000 clocks比較成硬體加速成果。日志：`build/dcim_backend/seed_505.log`、`seed_128.log`與`negative_golden.log`，build輸出不提交Git。
