@@ -159,6 +159,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 
 ### S5：DCIM backend 與完整混合推論
 
+2026-10-13：新增[公式與資料順序筆記](DCIM_S5_FORMULAS.md)，記錄卷積映射、MSB-first累加、序列輸出、unsigned修正及S5跨group累加建議。僅文件與獨立數學檢查，未實作backend、未改RTL、未更新S5驗收狀態。
+
 | 狀態 | 新增檔案 | 工作 |
 |---|---|---|
 | 未開始 | `rtl/dcim_adapter/kws_dcim_backend.sv` | 寫權重、mapping、tile、pin命令、原始結果重組與數值修正 |
