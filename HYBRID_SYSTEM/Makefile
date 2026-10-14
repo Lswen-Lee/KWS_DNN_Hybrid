@@ -10,13 +10,24 @@ TB_DATAPATH := tb/datapath
 # S5-A uses the real chip hierarchy, not an arithmetic response stub.
 DCIM_BACKEND_RTL := rtl/dcim_adapter/dcim_u8_offset_correction.sv rtl/dcim_adapter/kws_dcim_backend.sv
 DCIM_CHIP_RTL := $(wildcard ../CIM_CHIP/cell/*.sv ../CIM_CHIP/segment/*.sv ../CIM_CHIP/array/*.sv ../CIM_CHIP/peripheral/*.sv ../CIM_CHIP/chip/*.sv) ../CIM_CHIP/fpga/dcim_pin_master.sv
+DCIM_SUBSYSTEM_RTL := $(DCIM_BACKEND_RTL) $(DCIM_CHIP_RTL) ../CIM_CHIP/fpga/dcim_cdc_bridge.sv rtl/integration/kws_dcim_subsystem.sv
+.PHONY: test-dcim-subsystem lint-dcim-subsystem
+lint-dcim-subsystem:
+	$(VERILATOR) --lint-only -Wall -Wno-SYNCASYNCNET -Wno-PINCONNECTEMPTY -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM --top-module kws_dcim_subsystem $(DCIM_SUBSYSTEM_RTL)
+test-dcim-subsystem: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-SYNCASYNCNET -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY -Wno-UNUSEDPARAM --top-module tb_kws_dcim_subsystem -Mdir $(BUILD_DIR)/dcim_subsystem $(DCIM_SUBSYSTEM_RTL) tb/integration/tb_kws_dcim_subsystem.sv
+	@set -e; for config in '10000 1300 505' '9434 2700 128' '4000 0 505' '3000 1900 128'; do \
+	  set -- $$config; log=$(BUILD_DIR)/dcim_subsystem/half_$${1}_phase_$${2}_seed_$${3}.log; \
+	  $(BUILD_DIR)/dcim_subsystem/Vtb_kws_dcim_subsystem +CIM_HALF_PS=$$1 +PHASE_PS=$$2 +SEED=$$3 +verilator+seed+$$3 > $$log 2>&1 || { tail -40 $$log; exit 1; }; \
+	  grep 'PASS S5-B SUMMARY' $$log; done
+	@ulimit -c 0; if $(BUILD_DIR)/dcim_subsystem/Vtb_kws_dcim_subsystem +CORRUPT_GOLDEN > $(BUILD_DIR)/dcim_subsystem/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else grep -q 'result mismatch' $(BUILD_DIR)/dcim_subsystem/negative_golden.log && echo "PASS expected S5-B corrupted-golden rejection"; fi
 .PHONY: test-dcim-backend lint-dcim-backend
 lint-dcim-backend:
 	$(VERILATOR) --lint-only -Wall --top-module kws_dcim_backend $(DCIM_BACKEND_RTL)
 test-dcim-backend: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-SYNCASYNCNET -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY -Wno-UNUSEDPARAM --top-module tb_kws_dcim_backend -Mdir $(BUILD_DIR)/dcim_backend $(DCIM_BACKEND_RTL) $(DCIM_CHIP_RTL) tb/integration/tb_kws_dcim_backend.sv
 	@for seed in 505 128; do $(BUILD_DIR)/dcim_backend/Vtb_kws_dcim_backend +SEED=$$seed +verilator+seed+$$seed > $(BUILD_DIR)/dcim_backend/seed_$$seed.log 2>&1; status=$$?; cat $(BUILD_DIR)/dcim_backend/seed_$$seed.log; test $$status -eq 0 || exit $$status; done
-	@ulimit -c 0; if $(BUILD_DIR)/dcim_backend/Vtb_kws_dcim_backend +CORRUPT_GOLDEN > $(BUILD_DIR)/dcim_backend/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else rg -q 'result mismatch' $(BUILD_DIR)/dcim_backend/negative_golden.log && echo "PASS expected S5-A corrupted-golden rejection"; fi
+	@ulimit -c 0; if $(BUILD_DIR)/dcim_backend/Vtb_kws_dcim_backend +CORRUPT_GOLDEN > $(BUILD_DIR)/dcim_backend/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else grep -q 'result mismatch' $(BUILD_DIR)/dcim_backend/negative_golden.log && echo "PASS expected S5-A corrupted-golden rejection"; fi
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
 ACTIVATION_PATH_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL) rtl/integration/kws_activation_path.sv
@@ -305,6 +316,7 @@ help:
 	@echo "  make test-postprocess-pot / test-dcim-offset - frame postprocessing and standalone DCIM correction"
 	@echo "  make test-requantizer-pot-exports - software bytes and model shift ROM consistency"
 	@echo "  make test-dcim-backend / lint-dcim-backend - S5-A real chip single-patch backend, two seeds and negative golden"
+	@echo "  make test-dcim-subsystem / lint-dcim-subsystem - S5-B real CDC+chip, four clock settings, reset/fault recovery"
 	@echo "HYBRID_SYSTEM verification targets"
 	@echo "  make test-result-pipeline / lint-result-pipeline / test-result-pipeline-iverilog - standalone PE8 result pipeline"
 	@echo "  make test-memory-engine / lint-memory-engine - PE9, PE8 compact, PE8 pipeline engine"
