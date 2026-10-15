@@ -137,6 +137,38 @@ PoT stream測comb/pipeline兩配置；PE engine檢查改名後實例仍能正確
 
 這份controller TB是協定驗證，不含真實MAC或RAM，完整DCIM整層數值驗收不能據此標PASS。Vivado合成、時序與板測未執行。既有Vivado frozen snapshots未更新、Tcl只更新來源檔名，未實際執行Vivado。
 
-## 7. 下一步
+## 7. 2026-10-15 審查後 V1～V6 補測
+
+本輪只修改TB、Makefile與文件，controller及PoT RTL不變。保留第6節歷史結果，新增驗收如下：
+
+| 項目 | 補測內容 |
+|---|---|
+| V1 | START_WRITER／START_PATCH／START_READER／DRAIN_LAYER各注入Reader error、Writer error、DCIM error、resident無效、意外post_valid，共20例 |
+| V2 | Reader／DCIM的第一次done已記住後再脈衝；Writer第一次done與最後輸出同拍，DRAIN中再次高電位，共3例 |
+| V3 | 108筆後不送Reader done再送第109筆；12筆後不送DCIM done再送第13筆，共2例 |
+| V4 | 3×3來源12×9=108筆，src=32660/dst=0；目的12筆，src=0/dst=32756；反向相鄰src=12/dst=0，共3個完整成功層 |
+| V5 | 同一正常層在CONFIG、三種命令等待、RUN、DRAIN六個位置提交非法新配置，busy期間不接受；在回IDLE前撤銷valid，原層仍完整成功 |
+| V6 | 保留Reader錯座標負向測試，新增`+CORRUPT_WRITER`，必須因`output coordinate/tag mismatch`失敗 |
+
+V1/V2/V3使用唯讀階層觀察確認目標state／count／done_seen確實到達，不force或修改內部狀態。意外post_valid在非RUN狀態不能握手；注入錯誤時將相關ready設高，確定沒有偷偷多接受命令。FAULT檢查error單拍、done不成功、狀態鎖定；下一案例共同reset確認回到IDLE，之後三個邊界層與busy測試層驗證正常恢復。不是每個fault之後都重新計算一整層。
+
+Writer重複done為連續兩個取樣edge都高的壓力案例；若正常任務已回IDLE才再送脈波，不會冒稱這是同一筆交易內的重複偵測。
+
+合法的來源終點等於目的起點，原正常層`dst=W*H*12`已測過；本輪額外補上最高端點及反向相鄰，不把原覆蓋抹除。
+
+本輪`make lint-dcim-layer-controller test-dcim-layer-controller`退出碼0，Verilator 5.030，無Warning/Error：
+
+```text
+PASS extensions nonrun_faults=20 duplicate_done=3 excess=2 boundaries=3 busy_probes=6
+PASS dcim_layer_controller layers=9 rejected=10 faults=11 resets=7 patches=454 outputs=5184
+PASS expected controller coordinate rejection
+PASS expected controller Writer coordinate rejection
+```
+
+`faults=11`仍是原RUN案例，新增fault另計20+3+2，所以本輪共36個故障注入案例。正常9層共424個完整patch、5088筆結果；其餘96筆是刻意中止案例先前已接受的結果。454個patch命令包含424正常＋原11 fault＋原4 reset＋V1的10個＋V2/V3的5個。5184結果包含5088正常＋原reset的12＋V1 DRAIN五例60＋V2 Writer12＋V3超量結果12。
+
+Log：`HYBRID_SYSTEM/build/dcim_layer_controller/verification_v1_v6.log`；兩個負向測試分別為`negative.log`、`negative_writer.log`。原`verification.log`保留歷史第一批結果。TB只讀內部狀態確認覆蓋，並未修改RTL；不等於正式coverage分析或真實端點整合。未重跑未改動的PoT／PE回歸、未執行Vivado。
+
+## 8. 下一步
 
 依原規劃建立真實Reader/RAM→DCIM subsystem→PoT→Writer整合TB，加入Conv2/3軟體權重／activation/golden；再修改共享kws_activation_path的所有權與resident管理。本次尚未將新controller掛入該top，不開放FULL模式。

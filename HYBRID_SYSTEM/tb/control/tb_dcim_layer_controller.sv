@@ -32,9 +32,13 @@ module tb_dcim_layer_controller;
     integer w=3, h=3, src=0, dst=1000, layer=1;
     bit old_done=0;
     bit stall_mode=1;
+    bit withhold_reader_done=0, probe_mode=0;
+    integer boundary_mode=0, nonrun_faults=0, duplicate_faults=0, excess_faults=0;
+    integer boundaries=0, busy_probes=0, layer_commands=0;
     always @(posedge clk) if (!rst) begin
         if (done && (error || fault || old_done)) $fatal(1,"done pulse/error violation");
         old_done <= done;
+        if(cmd_valid && cmd_ready) layer_commands++;
         if (writer_cmd_valid && writer_cmd_ready) begin
             writer_commands++;
             if (int'(writer_base)!=dst || int'(writer_width)!=w-2 || int'(writer_height)!=h-2)
@@ -54,7 +58,8 @@ module tb_dcim_layer_controller;
         if ((post_valid && post_ready) != (writer_in_valid && writer_in_ready))
             $fatal(1,"result handshake mismatch");
         if (writer_in_valid && writer_in_ready) begin
-            if (int'(writer_x)!=expected_x || int'(writer_y)!=expected_y || writer_channel!={1'b0,post_channel})
+            if (int'(writer_x)!=expected_x + ($test$plusargs("CORRUPT_WRITER") ? 1 : 0) ||
+                int'(writer_y)!=expected_y || writer_channel!={1'b0,post_channel})
                 $fatal(1,"output coordinate/tag mismatch");
             results++;
         end
@@ -84,18 +89,36 @@ module tb_dcim_layer_controller;
         // Mutate public configuration after handshake: DUT must use saved values.
         cmd_width=255; cmd_height=255; cmd_src_base=32767; cmd_dst_base=32767; cmd_layer_id=7;
     endtask
+    // A busy command is deliberately withdrawn before IDLE; holding valid
+    // until IDLE would correctly request a NEW command and is not a fault.
+    task automatic busy_probe;
+        integer before_commands;
+        before_commands=layer_commands;
+        cmd_valid=1; cmd_width=255; cmd_height=0; cmd_layer_id=7;
+        cmd_src_base=32767;cmd_dst_base=32767;
+        repeat(3) begin
+            if(!busy || cmd_ready) $fatal(1,"busy command accepted");
+            tick(1);
+        end
+        cmd_valid=0;
+        if(layer_commands!=before_commands) $fatal(1,"busy command count changed");
+        busy_probes++;
+    endtask
     task automatic start_writer;
         while(!writer_cmd_valid) tick(1);
+        if(probe_mode) busy_probe();
         tick(3);
         if (!writer_cmd_valid || dcim_patch_valid) $fatal(1,"writer command not held");
         writer_cmd_ready=1; tick(1); writer_cmd_ready=0;
     endtask
     task automatic start_patch;
         while(!dcim_patch_valid) tick(1);
+        if(probe_mode) busy_probe();
         tick(2);
         if (!dcim_patch_valid || reader_cmd_valid) $fatal(1,"patch command not held");
         dcim_patch_ready=1; tick(1); dcim_patch_ready=0;
         while(!reader_cmd_valid) tick(1);
+        if(probe_mode) busy_probe();
         tick(2);
         if (!reader_cmd_valid) $fatal(1,"reader command not held");
         reader_cmd_ready=1; tick(1); reader_cmd_ready=0;
@@ -110,7 +133,7 @@ module tb_dcim_layer_controller;
             tick(1);
         end
         reader_out_valid=0; reader_out_last=0; dcim_activation_ready=0; reader_done=0;
-        if(!same_edge_done) begin tick(2); reader_done=1; tick(1); reader_done=0; end
+        if(!same_edge_done && !withhold_reader_done) begin tick(2); reader_done=1; tick(1); reader_done=0; end
     endtask
     task automatic send_results(input integer done_order, input bit early_writer);
         if(done_order==0) begin dcim_patch_done=1; tick(1); dcim_patch_done=0; end
@@ -130,16 +153,23 @@ module tb_dcim_layer_controller;
     task automatic run_layer(input integer iw, ih, ilayer, input bit early_writer);
         integer before_p, before_r, before_a, before_o, before_w;
         w=iw; h=ih; layer=ilayer; src=0; dst=w*h*12;
+        case(boundary_mode)
+            1: dst=32768-(w-2)*(h-2)*12;
+            2: begin src=32768-w*h*12;dst=0; end
+            3: begin src=(w-2)*(h-2)*12;dst=0; end
+            default: ;
+        endcase
         reset_all();
         before_p=patch_commands; before_r=reader_commands; before_a=activations;
         before_o=results; before_w=writer_commands;
-        command(); start_writer();
+        command(); if(probe_mode) busy_probe(); start_writer();
         for(integer y=0;y<h-2;y++) for(integer x=0;x<w-2;x++) begin
             expected_x=x; expected_y=y;
-            start_patch(); send_input(((x+y)%2)==0);
+            start_patch(); if(probe_mode) busy_probe(); send_input(((x+y)%2)==0);
             send_results((x+y)%3,early_writer && x==w-3 && y==h-3);
         end
         if(!early_writer) begin
+            if(probe_mode) busy_probe();
             tick(5); if(done || !busy) $fatal(1,"layer done before RAM commit");
             writer_done=1; tick(1); writer_done=0;
         end
@@ -149,6 +179,83 @@ module tb_dcim_layer_controller;
            writer_commands-before_w!=1) $fatal(1,"layer transaction counts mismatch");
         tick(2); if(done || busy) $fatal(1,"not idle after done");
         successes++;
+        if(boundary_mode!=0) boundaries++;
+    endtask
+    // V1: reach the target through public transactions; hierarchy is read-only
+    // to prove the intended state was actually exercised (never force state).
+    task automatic nonrun_fault(input integer phase, kind);
+        integer before_a,before_o,before_p,before_r,before_w;
+        w=3;h=3;src=0;dst=1000;layer=1;reset_all();expected_x=0;expected_y=0;
+        command(); while(!writer_cmd_valid) tick(1);
+        if(phase>=1) start_writer();
+        if(phase==2) begin dcim_patch_ready=1;tick(1);dcim_patch_ready=0; end
+        if(phase==3) begin start_patch();send_input(0);send_results(0,0); end
+        case(phase)
+            0: if(dut.state!=dut.START_WRITER) $fatal(1,"V1 missed START_WRITER");
+            1: if(dut.state!=dut.START_PATCH) $fatal(1,"V1 missed START_PATCH");
+            2: if(dut.state!=dut.START_READER) $fatal(1,"V1 missed START_READER");
+            3: if(dut.state!=dut.DRAIN_LAYER) $fatal(1,"V1 missed DRAIN_LAYER");
+        endcase
+        before_a=activations;before_o=results;before_p=patch_commands;
+        before_r=reader_commands;before_w=writer_commands;
+        // Ready high makes illegal command/data acceptance observable.
+        writer_cmd_ready=1;reader_cmd_ready=1;dcim_patch_ready=1;writer_in_ready=1;
+        case(kind)
+            0: reader_error=1;
+            1: writer_error=1;
+            2: dcim_error=1;
+            3: resident_valid=0;
+            4: post_valid=1;
+        endcase
+        tick(1);
+        if(!fault || !error || done || !dcim_source_error || activations!=before_a || results!=before_o ||
+           patch_commands!=before_p || reader_commands!=before_r || writer_commands!=before_w)
+            $fatal(1,"V1 failure phase=%0d kind=%0d",phase,kind);
+        tick(3);
+        if(!fault || error || done || cmd_ready || raw_path_enable) $fatal(1,"V1 fault not sticky");
+        nonrun_faults++;
+    endtask
+    task automatic duplicate_or_excess(input integer kind);
+        integer before_a,before_o;
+        w=3;h=3;src=0;dst=1000;layer=1;reset_all();expected_x=0;expected_y=0;
+        command();start_writer();start_patch();
+        withhold_reader_done=(kind==3);
+        send_input(0);withhold_reader_done=0;
+        case(kind)
+            0: begin
+                if(!dut.reader_done_seen) $fatal(1,"V2 Reader first done not seen");
+            end
+            1: begin
+                dcim_patch_done=1;tick(1);dcim_patch_done=0;tick(1);
+                if(!dut.dcim_done_seen) $fatal(1,"V2 DCIM first done not seen");
+            end
+            2: begin
+                send_results(1,1);
+                if(dut.state!=dut.DRAIN_LAYER || !dut.writer_done_seen)
+                    $fatal(1,"V2 Writer first done not saved in DRAIN");
+            end
+            3: if(dut.activation_count!=108 || dut.reader_done_seen)
+                   $fatal(1,"V3 activation setup incorrect");
+            4: begin
+                send_results(3,0); // No DCIM done: remain RUN with 12 accepted outputs.
+                if(dut.state!=dut.RUN_PATCH || dut.result_count!=12 || dut.dcim_done_seen)
+                    $fatal(1,"V3 result setup incorrect");
+            end
+        endcase
+        before_a=activations;before_o=results;
+        case(kind)
+            0: reader_done=1;
+            1: dcim_patch_done=1;
+            2: writer_done=1; // Consecutive high cycles are duplicate done events.
+            3: begin reader_out_valid=1;reader_out_last=0;dcim_activation_ready=1; end
+            4: begin post_valid=1;post_channel=12;post_last=0;writer_in_ready=1; end
+        endcase
+        tick(1);
+        if(!fault || !error || done || activations!=before_a || results!=before_o)
+            $fatal(1,"V2/V3 not rejected kind=%0d",kind);
+        tick(3);
+        if(!fault || error || done || raw_path_enable || cmd_ready) $fatal(1,"V2/V3 fault not sticky");
+        if(kind<3) duplicate_faults++;else excess_faults++;
     endtask
     task automatic reject_config(input integer kind);
         integer before_w;
@@ -228,6 +335,14 @@ module tb_dcim_layer_controller;
         end
         stall_mode=0;
         run_layer(3,3,1,0); // post-reset/fault recovery, no data-path stalls
+        for(integer p=0;p<4;p++) for(integer k=0;k<5;k++) nonrun_fault(p,k);
+        for(integer k=0;k<5;k++) duplicate_or_excess(k);
+        for(integer b=1;b<=3;b++) begin boundary_mode=b;run_layer(3,3,1,0); end
+        boundary_mode=0;probe_mode=1;run_layer(3,3,1,0);probe_mode=0;
+        if(nonrun_faults!=20 || duplicate_faults!=3 || excess_faults!=2 || boundaries!=3 || busy_probes!=6)
+            $fatal(1,"V1-V5 coverage count mismatch");
+        $display("PASS extensions nonrun_faults=%0d duplicate_done=%0d excess=%0d boundaries=%0d busy_probes=%0d",
+                 nonrun_faults,duplicate_faults,excess_faults,boundaries,busy_probes);
         $display("PASS dcim_layer_controller layers=%0d rejected=%0d faults=%0d resets=%0d patches=%0d outputs=%0d",
                  successes,rejections,faults,resets,patch_commands,results);
         $finish;

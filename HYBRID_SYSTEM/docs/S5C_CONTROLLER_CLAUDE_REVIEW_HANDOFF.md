@@ -3,6 +3,8 @@
 日期：2026-10-15。實作版本：`19376487d46432d8073dc3baa6476257f034c8f7`。
 本文件整理實作內容、變更與驗證證據，**不代表Claude已審查，不代表完整S5-C已完成**。
 
+更新（2026-10-15）：使用者提供Claude對`1937648`的審查結果後，已完成V1～V6補測，見本文件第10節。第1～9節保留原交接版本背景；其中「未測」項目以第10節最新狀態為準。
+
 ## 1. 可直接使用的審查任務
 
 > 請依本文件閱讀實際RTL、TB、Makefile與版本差異，獨立判斷dcim_layer_controller是否符合S5-C第一批目標，以及pot_result_stream改名是否完整且未改變行為。請先只審查、不修改程式、不commit/push。不要只根據PASS或作者文件判斷；請追查握手、同拍完成、反壓、reset、錯誤與組合回授。如果執行測試，輸出寫入獨立log，完成後再檢查，不持續查看每拍數值。回報確定問題時請附檔案與行號、觸發條件、影響與最小修正建議。將功能錯誤、驗證缺口、可選最佳化、未完成整合及實體時序限制分開。最後說明是否可進入真實DCIM/RAM整合測試。
@@ -187,3 +189,32 @@ printf 'controller=%s rename=%s logs=%s\n' "$controller_status" "$rename_status"
 6. 能否進入真實整層整合，及必須先處理的阻擋項。
 
 沒有找到確定錯誤時，請寫「在已審查範圍內未找到確定功能錯誤」，並保留剩餘風險，不寫「保證無誤」或「保證125MHz」。
+
+## 10. 審查後 V1～V6 補測交接（2026-10-15）
+
+本輪只修改以下五份檔案，**沒有改controller、PoT或其他RTL**：
+
+1. `HYBRID_SYSTEM/tb/control/tb_dcim_layer_controller.sv`
+2. `HYBRID_SYSTEM/Makefile`
+3. `HYBRID_SYSTEM/docs/DCIM_LAYER_CONTROLLER.md`
+4. `HYBRID_SYSTEM/docs/SINGLE_BUFFER_ARCHITECTURE.md`
+5. 本交接文件。
+
+新增`nonrun_fault` task以公開交易到達四個目標狀態，內部state只讀確認，不force；每狀態注入五種錯誤，相關ready設高，核對無額外命令/資料握手且fault鎖定。`duplicate_or_excess`先核對count/done_seen，隔離重複done與超量條件。Writer的重複done以連續兩個edge高電位表示，第二次在DRAIN仍屬同一任務。
+
+`boundary_mode`讓正常run_layer覆蓋來源/目的終點32768與反向相鄰，確實執行完整108/12交易，不只檢查CONFIG接受。`busy_probe`在六個位置送錯命令，保持三拍後在IDLE之前撤銷，檢查命令接受計數未增加且原層完整完成。`+CORRUPT_WRITER`破壞Writer x期望，Makefile確認指定錯誤訊息及非零退出。
+
+實測命令：`make lint-dcim-layer-controller test-dcim-layer-controller`，Verilator5.030、退出0、無Warning/Error。原有案例保留，結果：
+
+```text
+PASS extensions nonrun_faults=20 duplicate_done=3 excess=2 boundaries=3 busy_probes=6
+PASS dcim_layer_controller layers=9 rejected=10 faults=11 resets=7 patches=454 outputs=5184
+PASS expected controller coordinate rejection
+PASS expected controller Writer coordinate rejection
+```
+
+本機最新證據為`HYBRID_SYSTEM/build/dcim_layer_controller/verification_v1_v6.log`，負向log為同目錄`negative.log`與`negative_writer.log`；原verification.log保留第一批證據。完整計數分解見[DCIM_LAYER_CONTROLLER.md第7節](DCIM_LAYER_CONTROLLER.md)。新增fault獨立計數，不能把摘要faults=11誤讀為本輪只有11個fault測試。
+
+請再次核對：V1是否真正在指定狀態注入；V2/V3是否先滿足count/done_seen前提；非法交易是否真的被阻擋；V4端點與相鄰區域是否正確；V5沒有誤把持續valid到IDLE應接受的新命令當錯誤；V6不是因其他原因失敗。
+
+仍未涵蓋真實RAM部分commit、實際端點整合／UNOPTFLAT、完整Conv2/3軟體數值與Vivado。此次沒有重跑PoT/PE改名回歸，舊PASS是歷史結果，不是本輪執行。

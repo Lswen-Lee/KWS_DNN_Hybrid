@@ -14,6 +14,7 @@ test-dcim-layer-controller: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL --top-module tb_dcim_layer_controller -Mdir $(BUILD_DIR)/dcim_layer_controller rtl/control/dcim_layer_controller.sv tb/control/tb_dcim_layer_controller.sv
 	$(BUILD_DIR)/dcim_layer_controller/Vtb_dcim_layer_controller
 	@ulimit -c 0; if $(BUILD_DIR)/dcim_layer_controller/Vtb_dcim_layer_controller +CORRUPT_EXPECTATION > $(BUILD_DIR)/dcim_layer_controller/negative.log 2>&1; then echo "FAIL: corrupt coordinate expectation accepted"; exit 1; else grep -q 'reader coordinates mismatch' $(BUILD_DIR)/dcim_layer_controller/negative.log && echo "PASS expected controller coordinate rejection"; fi
+	@ulimit -c 0; if $(BUILD_DIR)/dcim_layer_controller/Vtb_dcim_layer_controller +CORRUPT_WRITER > $(BUILD_DIR)/dcim_layer_controller/negative_writer.log 2>&1; then echo "FAIL: corrupt Writer expectation accepted"; exit 1; else grep -q 'output coordinate/tag mismatch' $(BUILD_DIR)/dcim_layer_controller/negative_writer.log && echo "PASS expected controller Writer coordinate rejection"; fi
 
 # S5-A uses the real chip hierarchy, not an arithmetic response stub.
 DCIM_BACKEND_RTL := rtl/dcim_adapter/dcim_u8_offset_correction.sv rtl/dcim_adapter/kws_dcim_backend.sv

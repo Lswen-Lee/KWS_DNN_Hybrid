@@ -179,6 +179,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 
 ### 共用驗證／文件／Vivado工作
 
+2026-10-15 S5-C審查補測：只改controller TB/Makefile/文件，RTL不變。V1非RUN四狀態×五錯誤20例、V2重複done3例、V3超量2例、V4合法上界/反向相鄰3層、V5 busy六位置與V6 Writer負向座標均PASS；完整回歸layers=9、原rejected=10/faults=11/resets=7、patch命令454、接受結果5184（含中止交易，不全是成功層）。lint通過，下一步仍是真實端點整合；詳[controller驗證第7節](DCIM_LAYER_CONTROLLER.md)。
+
 2026-10-15：新增[S5-C架構審查規劃書](S5C_ARCHITECTURE_REVIEW_PLAN.md)，供Claude獨立檢查整層控制功能與冗餘。內容為待審查提案，尚未新增controller RTL或TB；介面、尺寸策略與錯誤清理契約須確認後實作，不改變S5-C/D順序。
 
 2026-10-15後續授權：實作S5-C第一批controller及協定TB，採layer_id=1/2、固定K/C、合法可變W/H、CONFIG拒絕error單拍、執行期FAULT鎖定共同reset。5正常層、10拒絕、11fault、7reset及負向座標測試通過；未完成真實整層DCIM數值整合。後處理依使用者要求改名pot_result_stream，算術/FIFO不變；stream兩配置、PE engine六配置及PoT回歸與S4 lint通過。詳[DCIM_LAYER_CONTROLLER.md](DCIM_LAYER_CONTROLLER.md)。下一步仍為S5-C真實RAM/Reader/DCIM/PoT/Writer整合與軟體golden，不直接開放FULL。
