@@ -19,7 +19,10 @@ class VectorValidationTest(unittest.TestCase):
 
     def test_source_exports(self):
         arrays, manifest = validate(self.activations, self.weights, self.rom)
-        self.assertEqual(len(arrays), 12)
+        self.assertEqual(len(arrays), 24)
+        for name, count in [("conv2",4368),("conv3",576)]:
+            self.assertEqual(arrays[name+"_weights"].size,1296)
+            self.assertEqual(arrays[name+"_acc"].size,count)
         self.assertEqual(arrays["conv1_weights"].size, 108)
         self.assertEqual(manifest["zero_point"], 128)
 
@@ -46,6 +49,9 @@ class VectorValidationTest(unittest.TestCase):
                 (w/"conv1/metadata.txt", "source_model_bias=false", "source_model_bias=true"),
                 (w/"conv1/metadata.txt", "source_checkpoint_sha256=f", "source_checkpoint_sha256=0"),
                 (w/"conv1/metadata.txt", "per_channel_axis=0", "per_channel_axis=1"),
+                (w/"conv2/metadata.txt", "per_channel_axis=0", "per_channel_axis=1"),
+                (w/"conv3/metadata.txt", "weight_dtype=signed_int8", "weight_dtype=unsigned_uint8"),
+                (a/"conv2/metadata.txt", "activation_zero_point=128", "activation_zero_point=127"),
             ]
             for path, old, new in edits:
                 original = path.read_text()

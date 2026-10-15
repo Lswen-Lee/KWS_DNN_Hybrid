@@ -20,6 +20,15 @@ test-dcim-layer-controller: | $(BUILD_DIR)
 DCIM_BACKEND_RTL := rtl/dcim_adapter/dcim_u8_offset_correction.sv rtl/dcim_adapter/kws_dcim_backend.sv
 DCIM_CHIP_RTL := $(wildcard ../CIM_CHIP/cell/*.sv ../CIM_CHIP/segment/*.sv ../CIM_CHIP/array/*.sv ../CIM_CHIP/peripheral/*.sv ../CIM_CHIP/chip/*.sv) ../CIM_CHIP/fpga/dcim_pin_master.sv
 DCIM_SUBSYSTEM_RTL := $(DCIM_BACKEND_RTL) $(DCIM_CHIP_RTL) ../CIM_CHIP/fpga/dcim_cdc_bridge.sv rtl/integration/kws_dcim_subsystem.sv
+DCIM_LAYER_MEMORY_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/control/dcim_layer_controller.sv $(DCIM_SUBSYSTEM_RTL) $(POT_STREAM_RTL)
+.PHONY: test-dcim-layer-memory
+test-dcim-layer-memory: generate-activation-path-vectors | $(BUILD_DIR)
+	@set -e; for pipe in 0 1; do \
+	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-SYNCASYNCNET -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY -Wno-UNUSEDPARAM "-GPOSTPROCESS_PIPELINED=1'b$$pipe" --top-module tb_dcim_layer_memory -Mdir $(BUILD_DIR)/dcim_layer_memory_$$pipe $(DCIM_LAYER_MEMORY_RTL) tb/integration/tb_dcim_layer_memory.sv; \
+	  $(BUILD_DIR)/dcim_layer_memory_$$pipe/Vtb_dcim_layer_memory +VECTORS=$(BUILD_DIR)/activation_path_vectors > $(BUILD_DIR)/dcim_layer_memory_$$pipe/software.log 2>&1 || { tail -30 $(BUILD_DIR)/dcim_layer_memory_$$pipe/software.log; exit 1; }; \
+	  cat $(BUILD_DIR)/dcim_layer_memory_$$pipe/software.log; \
+	  ulimit -c 0; if $(BUILD_DIR)/dcim_layer_memory_$$pipe/Vtb_dcim_layer_memory +VECTORS=$(BUILD_DIR)/activation_path_vectors +SMOKE_ONLY +CORRUPT_GOLDEN > $(BUILD_DIR)/dcim_layer_memory_$$pipe/negative.log 2>&1; then echo 'FAIL corrupted golden accepted'; exit 1; else grep -q 'post UINT8 mismatch' $(BUILD_DIR)/dcim_layer_memory_$$pipe/negative.log; fi; \
+	done
 .PHONY: test-dcim-subsystem lint-dcim-subsystem
 lint-dcim-subsystem:
 	$(VERILATOR) --lint-only -Wall -Wno-SYNCASYNCNET -Wno-PINCONNECTEMPTY -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM --top-module kws_dcim_subsystem $(DCIM_SUBSYSTEM_RTL)
@@ -312,6 +321,7 @@ lint-layer-weight-loader:
 
 help:
 	@echo "  make test-dcim-layer-controller / lint-dcim-layer-controller - S5-C controller protocol (not full DCIM arithmetic integration)"
+	@echo "  make test-dcim-layer-memory - S5-C real RAM/Reader/DCIM/PoT/Writer, Conv2/3 software golden, both PoT configurations"
 	@echo "  make test-layer-descriptor / test-layer-controller / lint-s4 - S4 ROM, sequencing and integrated lint"
 	@echo "  make test-s4-software - actual controller-driven FRONTEND/FC_TAIL, two PE8 configurations and seeds"
 	@echo "  make test-activation-path / lint-activation-path - S2 real RAM-reader-pool-writer integration"

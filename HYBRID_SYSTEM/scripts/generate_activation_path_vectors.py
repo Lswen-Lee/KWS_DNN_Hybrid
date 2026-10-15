@@ -1,4 +1,4 @@
-"""Validate existing zp128 exports and stage S3 files for SV $readmemh.
+"""Validate existing zp128 exports and stage S3/S5-C files for SV $readmemh.
 
 No training, checkpoint execution or RTL-derived golden. Original software bytes
 remain authoritative. Fixed model geometry is checked before generating files.
@@ -15,9 +15,12 @@ import numpy as np
 ACT_SHAPES = {
     "quant_input": (1, 1, 64, 126), "pool1": (1, 1, 32, 63),
     "conv1": (1, 12, 30, 61), "relu1": (1, 12, 30, 61), "pool2": (1, 12, 15, 30),
+    "conv2": (1, 12, 13, 28), "relu2": (1, 12, 13, 28), "pool3": (1, 12, 6, 14),
+    "conv3": (1, 12, 4, 12), "relu3": (1, 12, 4, 12), "pool4": (1, 12, 2, 6),
     "flatten": (1, 144), "fc1": (1, 32), "relu4": (1, 32), "fc2": (1, 8),
 }
-WEIGHT_SHAPES = {"conv1": (12, 1, 3, 3), "fc1": (32, 144), "fc2": (8, 32)}
+WEIGHT_SHAPES = {"conv1": (12, 1, 3, 3), "conv2": (12, 12, 3, 3),
+                 "conv3": (12, 12, 3, 3), "fc1": (32, 144), "fc2": (8, 32)}
 
 
 def require(condition, message):
@@ -67,10 +70,11 @@ def validate(activations, weights, rom):
         arrays[name] = values.reshape(shape)
         ameta[name] = meta
         sources.extend([folder / "metadata.txt", binary, decimal])
-    for before, after in [("quant_input", "pool1"), ("relu1", "pool2")]:
+    for before, after in [("quant_input", "pool1"), ("relu1", "pool2"), ("relu2", "pool3"), ("relu3", "pool4")]:
         require(ameta[before]["activation_scale"] == ameta[after]["activation_scale"], f"{after}: pool scale")
         require(np.array_equal(maxpool(arrays[before]), arrays[after]), f"{after}: software pool mismatch")
-    for before, after in [("conv1", "relu1"), ("fc1", "relu4")]:
+    require(np.array_equal(arrays["pool4"].reshape(1,144), arrays["flatten"]), "flatten: layout mismatch")
+    for before, after in [("conv1", "relu1"), ("conv2", "relu2"), ("conv3", "relu3"), ("fc1", "relu4")]:
         require(ameta[before]["activation_scale"] == ameta[after]["activation_scale"], f"{after}: relu scale")
         require(np.array_equal(np.maximum(arrays[before], 128), arrays[after]), f"{after}: software ReLU mismatch")
     rom_text = rom.read_text()
@@ -78,7 +82,8 @@ def validate(activations, weights, rom):
     pairs = re.findall(r"8'd(\d+): shift_amount=5'd(\d+);", rom_text)
     entries = {int(a): int(k) for a, k in pairs}
     require(len(entries) == len(pairs), "Duplicate PoT ROM address")
-    for name, input_name, layer_id in [("conv1", "pool1", 0), ("fc1", "flatten", 3), ("fc2", "relu4", 4)]:
+    for name, input_name, layer_id in [("conv1", "pool1", 0), ("conv2", "pool2", 1),
+                                      ("conv3", "pool3", 2), ("fc1", "flatten", 3), ("fc2", "relu4", 4)]:
         folder = weights / name
         meta = metadata(folder / "metadata.txt")
         shape = WEIGHT_SHAPES[name]
@@ -86,7 +91,7 @@ def validate(activations, weights, rom):
         require(int(meta["element_count"]) == int(np.prod(shape)), f"{name}: weight count")
         require(meta["weight_dtype"] == "signed_int8" and meta["binary_encoding"] == "8-bit_two_complement", f"{name}: weight encoding")
         require(meta["flatten_order"] == "C row-major; last index changes fastest", f"{name}: weight order")
-        layout = "[out_channel, in_channel, kernel_y, kernel_x]" if name == "conv1" else "[out_feature, in_feature]"
+        layout = "[out_channel, in_channel, kernel_y, kernel_x]" if name.startswith("conv") else "[out_feature, in_feature]"
         require(meta["weight_layout"] == layout and int(meta["per_channel_axis"]) == 0, f"{name}: weight layout")
         require(meta["source_checkpoint_sha256"] == sha, f"{name}: weight checkpoint")
         require(meta["source_model_bias"].lower() == "false" and meta["converted_bias_none_or_all_zero"].lower() == "true", f"{name}: bias")
@@ -100,7 +105,7 @@ def validate(activations, weights, rom):
         require(np.array_equal(w, np.loadtxt(decimal, dtype=np.int64).reshape(-1)), f"{name}: weight binary/decimal mismatch")
         w = w.reshape(shape)
         x = arrays[input_name] - 128
-        if name == "conv1":
+        if name.startswith("conv"):
             windows = np.lib.stride_tricks.sliding_window_view(x, (3, 3), axis=(-2, -1))
             acc = np.einsum("bihwuv,oiuv->bohw", windows, w, dtype=np.int64)
             broadcast = (1, -1, 1, 1)
@@ -122,16 +127,19 @@ def validate(activations, weights, rom):
         prediction = np.clip(np.sign(acc)*q+128, 0, 255)
         require(np.array_equal(prediction, arrays[name]), f"{name}: independent MAC/PoT differs from export")
         arrays[name+"_weights"] = w
+        if name in ("conv2", "conv3"):
+            arrays[name+"_acc"] = acc
+            arrays[name+"_shift"] = ks
         shifts[name] = ks.tolist()
         wmeta[name] = meta
         sources.extend([folder / n for n in ["metadata.txt", "weights_int8_binary.txt", "weights_int8.txt", "weight_scales.txt", "weight_zero_points.txt"]])
     manifest = {
-        "scope": "S3 Conv1/Pool chain; FC checks use exported intermediate inputs, not full CNN",
+        "scope": "S3/S5-C export validation; Conv2/3 independent INT64 MAC references, not a full hardware CNN proof",
         "checkpoint_sha256": sha, "dataset_index": sample,
         "zero_point": 128, "rounding": "nearest-even", "bias": False,
         "activation_order": "CHW, x fastest", "weight_order": "output channel, then k",
         "shift_by_channel": shifts,
-        "memory_map": {"quant_input": [0,8064], "pool1": [8064,2016], "relu1": [10080,21960], "pool2": [0,5400], "flatten": [0,144], "relu4": [144,32], "fc2": [0,8]},
+        "memory_map": {"quant_input": [0,8064], "pool1": [8064,2016], "relu1": [10080,21960], "pool2": [0,5400], "relu2": [5400,4368], "pool3": [0,1008], "relu3": [1008,576], "pool4": [0,144], "flatten": [0,144], "relu4": [144,32], "fc2": [0,8]},
         "sources": [{"path": str(p.resolve()), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources+[rom]],
         "activations": ameta, "weights": wmeta,
     }
@@ -152,11 +160,12 @@ def main():
     manifest["generated_files"] = {}
     for name, values in arrays.items():
         output = args.output / (name+".mem")
-        output.write_text("".join(f"{int(v)&255:02x}\n" for v in values.ravel()))
+        bits = 32 if name.endswith("_acc") else 8
+        output.write_text("".join(f"{int(v)&((1<<bits)-1):0{bits//4}x}\n" for v in values.ravel()))
         manifest["generated_files"][output.name] = {"count": int(values.size), "shape": list(values.shape),
-            "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
+            "bits": bits, "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2)+"\n")
-    print(f"PASS S3 vectors: sample={manifest['dataset_index']}, {len(arrays)} files; software MAC/PoT/ReLU/Pool and ROM match")
+    print(f"PASS S3/S5-C vectors: sample={manifest['dataset_index']}, {len(arrays)} files; software MAC/PoT/ReLU/Pool and ROM match")
     print(f"Output: {args.output.resolve()}")
 
 

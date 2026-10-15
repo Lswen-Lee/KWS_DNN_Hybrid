@@ -179,6 +179,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 
 ### 共用驗證／文件／Vivado工作
 
+2026-10-15 S5-C真實端點整合模擬通過：新增`tb/integration/tb_dcim_layer_memory.sv`，接真實RAM/Reader/DCIM subsystem/PoT/Writer；擴充軟體向量產生器至Conv2/3的權重、activation、INT32與shift參考。兩種PoT配置各4案例、419patch、5028筆raw/PoT/commit、131072筆全RAM讀回與Golden破壞負向測試全部PASS；Python與原controller回歸/lint通過。共享`kws_activation_path`與FULL拒絕不變。設計與執行結果集中於[S5-C真實整層驗證](S5C_DCIM_LAYER_MEMORY.md)，審查入口為[Claude交接](S5C_REAL_INTEGRATION_CLAUDE_REVIEW.md)。不把TB接線當成共享top已整合，未執行Vivado或板測。
+
 2026-10-15 S5-C審查補測：只改controller TB/Makefile/文件，RTL不變。V1非RUN四狀態×五錯誤20例、V2重複done3例、V3超量2例、V4合法上界/反向相鄰3層、V5 busy六位置與V6 Writer負向座標均PASS；完整回歸layers=9、原rejected=10/faults=11/resets=7、patch命令454、接受結果5184（含中止交易，不全是成功層）。lint通過，下一步仍是真實端點整合；詳[controller驗證第7節](DCIM_LAYER_CONTROLLER.md)。
 
 2026-10-15：新增[S5-C架構審查規劃書](S5C_ARCHITECTURE_REVIEW_PLAN.md)，供Claude獨立檢查整層控制功能與冗餘。內容為待審查提案，尚未新增controller RTL或TB；介面、尺寸策略與錯誤清理契約須確認後實作，不改變S5-C/D順序。
