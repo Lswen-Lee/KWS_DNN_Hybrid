@@ -10,7 +10,7 @@ set pp_name pp${pp_pipeline}_f${pp_frequency}
 if {![info exists pp_destination]} {set pp_destination [file join $pp_hybrid build postprocess $pp_name]}
 if {[file exists $pp_destination]} {error "Destination exists; open its XPR or select a new pp_destination: $pp_destination"}
 set pp_sources [glob -directory $pp_dir *.sv]
-foreach f {pe_pot_result_stream kws_pot_shift_rom requantizer_int32_to_uint8_pot requantizer_int32_to_uint8_pot_comb maxpool2x2_uint8 argmax_8} {
+foreach f {pot_result_stream kws_pot_shift_rom requantizer_int32_to_uint8_pot requantizer_int32_to_uint8_pot_comb maxpool2x2_uint8 argmax_8} {
     lappend pp_sources [file join $pp_hybrid rtl datapath ${f}.sv]
 }
 lappend pp_sources [file join $pp_hybrid rtl integration postprocess_tail.sv]

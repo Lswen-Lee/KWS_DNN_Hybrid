@@ -1,7 +1,7 @@
 VERILATOR ?= verilator
 .DEFAULT_GOAL := test
 HYBRID := ../HYBRID_SYSTEM
-BOARD_RTL = $(wildcard rtl/board/*.sv) $(HYBRID)/rtl/integration/pe_pot_engine.sv $(addprefix $(HYBRID)/rtl/datapath/,requantizer_int32_to_uint8_pot.sv requantizer_int32_to_uint8_pot_comb.sv kws_pot_shift_rom.sv pe_pot_result_stream.sv)
+BOARD_RTL = $(wildcard rtl/board/*.sv) $(HYBRID)/rtl/integration/pe_pot_engine.sv $(addprefix $(HYBRID)/rtl/datapath/,requantizer_int32_to_uint8_pot.sv requantizer_int32_to_uint8_pot_comb.sv kws_pot_shift_rom.sv pot_result_stream.sv)
 .PHONY: test-board lint-board
 test-board:
 	@mkdir -p build/board_sim

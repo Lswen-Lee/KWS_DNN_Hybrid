@@ -40,7 +40,7 @@ flowchart TD
     OPERAND --> CONVERT[A−128\nPE8 signed8 / PE9 sign-extend signed9]
     CONVERT --> MAC[12 MAC lanes\n乘法 → Product FF → ACC FF]
     MAC --> RESULT[pe_result_controller\n依序選 channel 的 raw ACC]
-    RESULT --> STREAM[pe_pot_result_stream\nlayer/channel → shift ROM]
+    RESULT --> STREAM[pot_result_stream\nlayer/channel → shift ROM]
     STREAM --> QUANT[三級 PoT requantizer]
     QUANT --> RELU[可選 ReLU 門檻 128]
     RELU --> FIFO[8-entry result FIFO\n資料、channel、group_last、error]
@@ -60,7 +60,7 @@ FC1 的 32 channels 仍分 12+12+8；Conv1 是一個 patch 對 12 channels；FC2
 | `rtl/integration/pe_memory_engine.sv` | 新增固定參數 INPUT_ZERO_POINT，預設 127 保留舊版；128 時兩類 PE 都計算 A−128，移除 ΣW 生成／記憶體／修正路徑 |
 | `rtl/control/pe_result_controller.sv` | 將 APPLY_SUM_CORRECTION 與 PE8 位寬分開；新增 RAW_PIPELINED 彈性輸出 FF |
 | `rtl/integration/pe_pot_engine.sv` | 新增完整 PE→PoT→UINT8 工作封裝；等待下游收完結果才 done |
-| `rtl/datapath/pe_pot_result_stream.sv` | shift lookup、量化、ReLU、tag 延遲、FIFO／backpressure |
+| `rtl/datapath/pot_result_stream.sv` | shift lookup、量化、ReLU、tag 延遲、FIFO／backpressure |
 | `rtl/datapath/kws_pot_shift_rom.sv` | 76 個 layer/channel 的固定 shift；不合法位址有 valid=0 |
 | `rtl/datapath/relu_uint8_zp127.sv` | 名稱維持相容，新增 ZERO_POINT 參數，預設 127；新路徑用 128 |
 | `rtl/datapath/kws_postprocess_pot.sv` | 獨立 frame 版本：PoT→ReLU→可選 2×2 pool；舊 Q31 檔不動 |
@@ -179,7 +179,7 @@ FC1 有三組，所以 raw output FF 總共增加 3 拍。新封裝還有 requan
 
 ## 5. PoT 與 pooling 的連接注意事項
 
-`pe_pot_result_stream` 在接受 raw result 時就保留 FIFO 空位，reserved 包含尚在三級 quantizer 中的資料。
+`pot_result_stream` 在接受 raw result 時就保留 FIFO 空位，reserved 包含尚在三級 quantizer 中的資料。
 容量 8，reserved==8 即停止接受。不能只看 FIFO 的已寫入 count，否則 downstream stall 時管線中的資料會溢出。
 無停頓時 raw 在 E0 接受，quantizer 在 E2 後產生 Q，FIFO 在 E3 後產生 out_valid，最早 E4 被外部握手接收。
 layer/channel/error/ReLU/last 一起延遲，不能用當前輸入的 channel 來解讀三拍前的結果。

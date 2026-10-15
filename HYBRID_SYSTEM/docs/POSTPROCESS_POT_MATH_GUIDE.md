@@ -305,11 +305,11 @@ INT32 ACC
 外部依層別選擇儲存、MaxPool 或 Argmax
 ```
 
-[pe_pot_result_stream.sv](../rtl/datapath/pe_pot_result_stream.sv) 負責查表、重新量化、可選 ReLU、標籤對齊與 FIFO 背壓控制。組合版與管線版的目標數學公式相同，差異在暫存切分與延遲；組合版仍有結果 FIFO，不代表整個 stream 模組都沒有暫存器。
+[pot_result_stream.sv](../rtl/datapath/pot_result_stream.sv) 負責查表、重新量化、可選 ReLU、標籤對齊與 FIFO 背壓控制。組合版與管線版的目標數學公式相同，差異在暫存切分與延遲；組合版仍有結果 FIFO，不代表整個 stream 模組都沒有暫存器。
 
 ### 後續 MaxPool 與 Argmax
 
-兩者不在 `pe_pot_result_stream` 內，而由後續模組處理。
+兩者不在 `pot_result_stream` 內，而由後續模組處理。
 
 2×2 MaxPool 在同一 channel 的視窗內取最大值：
 

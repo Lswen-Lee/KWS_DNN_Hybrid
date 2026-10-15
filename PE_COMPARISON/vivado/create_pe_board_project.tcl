@@ -42,7 +42,7 @@ if {[string match *_pot* $pe_variant]} {
         HYBRID_SYSTEM/rtl/datapath/requantizer_int32_to_uint8_pot.sv
         HYBRID_SYSTEM/rtl/datapath/requantizer_int32_to_uint8_pot_comb.sv
         HYBRID_SYSTEM/rtl/datapath/kws_pot_shift_rom.sv
-        HYBRID_SYSTEM/rtl/datapath/pe_pot_result_stream.sv
+        HYBRID_SYSTEM/rtl/datapath/pot_result_stream.sv
         PE_COMPARISON/rtl/board/pe_board_golden_pot.sv
     } {lappend pb_sources [file join $pb_parent $spec]}
 }

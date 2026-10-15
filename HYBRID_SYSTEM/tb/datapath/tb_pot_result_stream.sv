@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-module tb_pe_pot_result_stream;
+module tb_pot_result_stream;
     parameter bit POSTPROCESS_PIPELINED=1;
     logic clk=0,rst=1; always #4 clk=~clk;
     logic in_valid=0; wire in_ready;
@@ -9,7 +9,7 @@ module tb_pe_pot_result_stream;
     wire out_valid; logic out_ready=0;
     wire [7:0] output_uint8; wire [4:0] out_channel_id;
     wire out_last,out_error;
-    pe_pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
+    pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
     logic [14:0] expected[0:2047],held_payload;
     integer sent=0,received=0,checks=0,cycles=0,full_cycles=0;
     logic held=0,drain=0;

@@ -29,7 +29,7 @@
 | 權重載入 | `pe_layer_weight_loader` | 整層權重依 channel、K 順序寫入 12-lane 記憶體 |
 | 分組運算 | `pe_group_controller` | 每組最多 12 channels，重播 activation、MAC、輸出結果 |
 | 結果輸出 | `pe_result_controller` | 逐 lane 送 INT32；兩版差異所在 |
-| 後處理 | `pe_pot_result_stream` | PoT requantize、可選 ReLU、FIFO、反壓 |
+| 後處理 | `pot_result_stream` | PoT requantize、可選 ReLU、FIFO、反壓 |
 
 兩個 top 分別設定 `PE8_MODE=1, POT_MODEL=1`，只有 `RESULT_PIPELINED=0/1` 不同。`pe_pot_engine` 將 raw engine 的輸入 zero-point 設為 128：
 
@@ -167,7 +167,7 @@ pipeline 的 `slot_ready = !valid_q || out_ready` 允許同一上升緣「送出
 
 ![後處理控制](pe8_control_diagrams/10_postprocess_control.png)
 
-來源：[pe_pot_result_stream.sv](../../HYBRID_SYSTEM/rtl/datapath/pe_pot_result_stream.sv)。quantizer 是固定延遲 valid pipeline，不是額外 enum FSM；輸出 FIFO 承接外部反壓。
+來源：[pot_result_stream.sv](../../HYBRID_SYSTEM/rtl/datapath/pot_result_stream.sv)。quantizer 是固定延遲 valid pipeline，不是額外 enum FSM；輸出 FIFO 承接外部反壓。
 
 - `reserved`：已接受但外部尚未接收的所有結果，包括還在量化管線中的資料。
 - `count`：已進入 FIFO、尚未被外部接收的結果。

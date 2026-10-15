@@ -117,7 +117,7 @@ INT32 ACC → 依 layer/channel 查 shift → 右移／round-to-nearest-even
 
 量化公式：`q = clip[0,255](round_even(ACC / 2^shift) + 128)`。開啟 ReLU 時，UINT8 結果下界提高為 128，因為量化的實數零對應 128，不是 0。這裡不加入 bias。
 
-Quantizer 為三級 valid 管線，不能中途任意停住，因此 `pe_pot_result_stream` 在接受 raw 結果時就預留 FIFO 空間：
+Quantizer 為三級 valid 管線，不能中途任意停住，因此 `pot_result_stream` 在接受 raw 結果時就預留 FIFO 空間：
 
 - `reserved`：所有已接受、外部尚未收走的結果，包括在途資料。
 - `count`：已真正寫入 FIFO 的資料數。

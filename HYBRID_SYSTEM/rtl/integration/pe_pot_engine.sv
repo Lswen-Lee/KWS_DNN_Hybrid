@@ -56,7 +56,7 @@ module pe_pot_engine #(
         .out_valid(raw_valid), .out_ready(raw_ready), .out_data(raw_data),
         .out_channel_id(raw_channel), .out_group_last(raw_last), .out_error(raw_error)
     );
-    pe_pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) postprocess (
+    pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) postprocess (
         .clk(clk), .rst(rst), .in_valid(raw_valid), .in_ready(raw_ready),
         .accumulator(raw_data), .layer_id(layer_q), .channel_id(raw_channel),
         .in_last(raw_last), .in_error(raw_error), .relu_enable(relu_q),

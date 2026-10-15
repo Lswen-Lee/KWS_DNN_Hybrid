@@ -34,7 +34,7 @@ module postprocess_self_test #(parameter bit POSTPROCESS_PIPELINED=0) (
     wire [4:0] channel_out;
     wire out_ready = phase[3]; // Stall outputs for 8 of every 16 clocks.
     assign busy = !rst && state != FINISH;
-    (* KEEP_HIERARCHY = "yes" *) pe_pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (
+    (* KEEP_HIERARCHY = "yes" *) pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (
         .clk(clk), .rst(rst), .in_valid(!rst && state==SEND), .in_ready(ready),
         .accumulator(operand_q), .layer_id(layer_q), .channel_id(channel_q),
         .relu_enable(relu_q), .in_last(last_q), .in_error(error_q),

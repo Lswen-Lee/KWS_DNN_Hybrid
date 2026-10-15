@@ -1,8 +1,8 @@
 `timescale 1ns/1ps
-// Raw PE result -> model ROM -> PoT requant -> optional ReLU -> elastic FIFO.
+// Raw INT32 result (PE or DCIM) -> KWS model ROM -> PoT/ReLU -> elastic FIFO.
 // Pipeline mode reserves a slot for in-flight data; comb mode captures directly.
 // Capacity 8; ready never depends on downstream ready. No dropped results on stalls.
-module pe_pot_result_stream #(
+module pot_result_stream #(
     parameter bit POSTPROCESS_PIPELINED = 1'b1
 ) (
     input logic clk, rst,

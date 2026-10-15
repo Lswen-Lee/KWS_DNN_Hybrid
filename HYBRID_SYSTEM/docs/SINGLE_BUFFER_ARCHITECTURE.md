@@ -47,7 +47,7 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 | `rtl/integration/pe_pot_engine.sv` | 初版真實 PE 入口，已含 weight engine、PoT、ReLU、輸出 FIFO；UINT8 結果直接接 writer，不再次量化 |
 | `rtl/integration/pe_memory_engine.sv` | raw INT32 engine；不是本階段預設替換目標，若改為共用後處理須另列架構變更 |
 | `rtl/control/pe_group_controller.sv` | 每命令一個 patch/vector，channels 以12為一組，可能要求 replay |
-| `rtl/datapath/pe_pot_result_stream.sv` | 量化、ReLU、FIFO；有 valid/ready |
+| `rtl/datapath/pot_result_stream.sv` | 量化、ReLU、FIFO；有 valid/ready |
 | `rtl/datapath/maxpool2x2_uint8.sv` | CHW串流、可變W/H/C；無 out_ready；pool_done不是最後一次記憶體提交 |
 | `rtl/datapath/argmax_8.sv` | 八類按0～7輸入；首次輸入前clear；同值選最早index |
 | `rtl/integration/postprocess_tail.sv` | pool／argmax分流，無輸出反壓；不是完整activation-memory管理器 |
@@ -167,6 +167,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 | S5-A功能模擬通過 | `tb/integration/tb_kws_dcim_backend.sv` | 真實master／chip，權重寫入／讀回到INT32；同時脈transport，非CDC驗收 |
 | S5-B功能模擬通過 | `rtl/integration/kws_dcim_subsystem.sv` | backend→CDC→master→chip薄封裝；外部雙時脈與共同reset契約，單筆write |
 | S5-B功能模擬通過 | `tb/integration/tb_kws_dcim_subsystem.sv` | 四組clock/phase、實際pin寫入、raw與INT32結果、reset/fault恢復；實體CDC尚未驗證 |
+| S5-C第一批協定模擬通過 | `rtl/control/dcim_layer_controller.sv` | 固定108×12、可配置W/H、八狀態整層排程；尚未接共享top |
+| S5-C第一批協定模擬通過 | `tb/control/tb_dcim_layer_controller.sv` | 受控端點、完整Conv2/3幾何、反壓/reset/fault；非真實整層算術驗收 |
 | 未開始 | `tb/integration/tb_kws_inference_top.sv` | 全層記憶體結果及最後分類比對 |
 
 2026-10-13使用者確認後實作S5-A：每層1296有效bytes加240 padding，row=k、pair=filter、Wu=Ws+128；group優先，每組32-byte activation重用於12個pair命令，最後12+20 padding=128。保存48份ΣWu與12份INT32跨group部分和；不變更chip/master。九個FSM狀態合併INIT/NEXT/DONE，保留registered修正器。make test-dcim-backend/lint-dcim-backend為專用入口。細節與實測見[S5-A](S5A_DCIM_BACKEND.md)。這是本次明確授權的新backend流程，不套用既有模組的延後最佳化清單。
@@ -178,6 +180,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 ### 共用驗證／文件／Vivado工作
 
 2026-10-15：新增[S5-C架構審查規劃書](S5C_ARCHITECTURE_REVIEW_PLAN.md)，供Claude獨立檢查整層控制功能與冗餘。內容為待審查提案，尚未新增controller RTL或TB；介面、尺寸策略與錯誤清理契約須確認後實作，不改變S5-C/D順序。
+
+2026-10-15後續授權：實作S5-C第一批controller及協定TB，採layer_id=1/2、固定K/C、合法可變W/H、CONFIG拒絕error單拍、執行期FAULT鎖定共同reset。5正常層、10拒絕、11fault、7reset及負向座標測試通過；未完成真實整層DCIM數值整合。後處理依使用者要求改名pot_result_stream，算術/FIFO不變；stream兩配置、PE engine六配置及PoT回歸與S4 lint通過。詳[DCIM_LAYER_CONTROLLER.md](DCIM_LAYER_CONTROLLER.md)。下一步仍為S5-C真實RAM/Reader/DCIM/PoT/Writer整合與軟體golden，不直接開放FULL。
 
 | 狀態 | 檔案 | 工作 |
 |---|---|---|

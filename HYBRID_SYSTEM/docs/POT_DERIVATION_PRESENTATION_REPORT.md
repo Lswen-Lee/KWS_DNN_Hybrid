@@ -242,7 +242,7 @@ layer/channel → shift ROM → k → 右移與 RNE
 |---|---|
 | scale 比例到 k | 軟體匯出，`kws_pot_shift_rom` 查表 |
 | ACC／2^k、RNE、zero-point、飽和 | PoT requantizer 組合／管線版本 |
-| 查表、可選 ReLU、標籤與背壓 | `pe_pot_result_stream` |
+| 查表、可選 ReLU、標籤與背壓 | `pot_result_stream` |
 | MaxPool／Argmax | 後續獨立模組，不包含在上述卷積公式內 |
 
 PoT 可移除一般倍率乘法器，倍率參數也由 Q31 整數變成小位寬 k；但可變位移、捨入、加法與 FIFO 仍有面積與時序成本。限制 scale 也可能降低模型準確率，因此不能僅依公式聲稱更快、更省多少或準確率完全不變。

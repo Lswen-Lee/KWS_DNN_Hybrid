@@ -3,7 +3,7 @@
 ## 目的與範圍
 
 使用正常板級 top，不使用 OOC。預設測試 150 MHz，可獨立選擇組合後處理或管線後處理。
-原有 PE／CIM／後處理底層 RTL 不修改。現在測試範圍包含 `pe_pot_result_stream` 的模型 shift ROM、PoT 重新量化、可選 ReLU、metadata、8-entry FIFO，以及新整合的 `postprocess_tail`：MaxPool及Argmax。不包含 PE、全模型排程、feature-map記憶體或完整 CNN。
+原有 PE／CIM／後處理底層 RTL 不修改。現在測試範圍包含 `pot_result_stream` 的模型 shift ROM、PoT 重新量化、可選 ReLU、metadata、8-entry FIFO，以及新整合的 `postprocess_tail`：MaxPool及Argmax。不包含 PE、全模型排程、feature-map記憶體或完整 CNN。
 
 公式：`clip_UINT8(RNE(acc / 2^k) + 128)`，ReLU 開啟時下限為 128。
 
@@ -49,7 +49,7 @@ stateDiagram-v2
 
 任何未完成狀態等待超過65535個clock會鎖存FAIL，避免失去回應但沒有錯誤指示。
 板級測試一次只保留一筆未完成交易，輸出ready每16個clock有8個clock關閉。
-它驗證結果保持及握手，不代表一筆／clock的滿載吞吐測試；FIFO滿載交互驗證另由既有 `tb_pe_pot_result_stream` 完成。
+它驗證結果保持及握手，不代表一筆／clock的滿載吞吐測試；FIFO滿載交互驗證另由既有 `tb_pot_result_stream` 完成。
 
 `postprocess_tail`只在`out_valid && out_ready`時消費FIFO資料，避免停頓時重複計算。
 mode=0量化驗證／旁路，mode=1卷積池化（CHW，x最快），mode=2 FC2（class 0到7）。mode、尺寸與frame_start由測試控制器保持至本筆尾端驗證完成。

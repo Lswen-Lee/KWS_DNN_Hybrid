@@ -1,6 +1,7 @@
 # S5-C 規劃書：DCIM 整層控制與低冗餘架構審查
 
 日期：2026-10-15。狀態：**待審查提案，尚未實作、尚未驗證**。
+更新：使用者後續授權實作第一批controller與單測，並將後處理改名`pot_result_stream`。第一批已實作並通過協定測試，詳[實作說明](DCIM_LAYER_CONTROLLER.md)；本文保留原提案脈絡，真實DCIM整層與共享top整合仍未完成。
 本文件承接已完成功能模擬的S5-B，不改變單一activation buffer基準。請Claude先審查，再由使用者決定是否開始撰寫；不要將本提案視為已通過的架構。
 
 ## 1. 可直接交給 Claude 的任務
@@ -16,7 +17,7 @@
 3. `HYBRID_SYSTEM/rtl/integration/kws_dcim_subsystem.sv`、`rtl/dcim_adapter/kws_dcim_backend.sv`（後者也位於HYBRID_SYSTEM）：load/patch握手、固定108×12、error/reset、raw INT32結果。
 4. `HYBRID_SYSTEM/rtl/datapath/activation_reader.sv`：PATCH模式、108筆展開、最後輸出握手與done時間。
 5. `HYBRID_SYSTEM/rtl/control/feature_map_writer.sv`：CHW、輸入接受與RAM commit分離、done/error。
-6. `HYBRID_SYSTEM/rtl/datapath/pe_pot_result_stream.sv`、`kws_pot_shift_rom.sv`（同目錄）：layer/channel對應、FIFO、反壓、pipeline與comb配置。
+6. `HYBRID_SYSTEM/rtl/datapath/pot_result_stream.sv`、`kws_pot_shift_rom.sv`（同目錄）：layer/channel對應、FIFO、反壓、pipeline與comb配置。
 7. `HYBRID_SYSTEM/rtl/control/pe_layer_controller.sv`：可參考控制風格，但不得照抄FC/replay等不需要的流程。
 8. `HYBRID_SYSTEM/rtl/integration/kws_activation_path.sv`、`rtl/control/layer_descriptor_rom.sv`、`rtl/control/layer_controller.sv`（均在HYBRID_SYSTEM）：既有所有權、descriptor、層ID與路由。
 9. `HYBRID_SYSTEM/scripts/generate_activation_path_vectors.py`、現有軟體整合TB：確認如何重用向量工具，不另建立不同格式。

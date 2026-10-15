@@ -4,7 +4,7 @@
 
 新增「組合量化＋原本 8-entry FIFO」，保留原三級管線版。適用目前 UINT8 zp128、signed INT8 weight、無 bias、PoT 模型；沒有改 PE 乘法器、Operand FF、Product FF、分組 FSM 或模型常數。
 
-新增固定參數 `POSTPROCESS_PIPELINED`，一路由 board top／self-test 傳至 `pe_pot_engine`／`pe_pot_result_stream`：
+新增固定參數 `POSTPROCESS_PIPELINED`，一路由 board top／self-test 傳至 `pe_pot_engine`／`pot_result_stream`：
 
 | 參數 | 選擇 |
 |---|---|
@@ -36,9 +36,9 @@ layer/channel → 組合 shift ROM → 組合量化的 shift_amount
 
 沒有把 rounding 改為 truncation，沒有只取低 8 bits。非法 ROM 位址仍使用預設 shift0，並將 error 跟該筆結果一起輸出。
 
-## 3. pe_pot_result_stream 的修改
+## 3. pot_result_stream 的修改
 
-來源：[pe_pot_result_stream.sv](../rtl/datapath/pe_pot_result_stream.sv)。
+來源：[pot_result_stream.sv](../rtl/datapath/pot_result_stream.sv)。
 
 FIFO、count、rd_ptr、wr_ptr 為兩個分支共用；generate 只保留其中一種量化與控制邏輯。
 
@@ -106,7 +106,7 @@ EMPTY／PARTIAL／FULL 是 count 的概念狀態，不是新 enum FSM。rst 有�
 | 分類 | 檔案 |
 |---|---|
 | 新組合運算 | `HYBRID_SYSTEM/rtl/datapath/requantizer_int32_to_uint8_pot_comb.sv` |
-| stream 重構 | `HYBRID_SYSTEM/rtl/datapath/pe_pot_result_stream.sv` |
+| stream 重構 | `HYBRID_SYSTEM/rtl/datapath/pot_result_stream.sv` |
 | 傳遞參數 | `pe_pot_engine.sv`、`pe_board_top.sv`、`pe_board_self_test.sv` |
 | 新固定 top | `pe8_compact_pot_comb_board_top.sv`、`pe8_pipeline_pot_comb_board_top.sv` |
 | 原測試擴充 | quantizer、stream、engine、board 四份 TB |

@@ -7,6 +7,14 @@ BUILD_DIR := build
 RTL_DATAPATH := rtl/datapath
 TB_DATAPATH := tb/datapath
 
+.PHONY: test-dcim-layer-controller lint-dcim-layer-controller
+lint-dcim-layer-controller:
+	$(VERILATOR) --lint-only -Wall --top-module dcim_layer_controller rtl/control/dcim_layer_controller.sv
+test-dcim-layer-controller: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL --top-module tb_dcim_layer_controller -Mdir $(BUILD_DIR)/dcim_layer_controller rtl/control/dcim_layer_controller.sv tb/control/tb_dcim_layer_controller.sv
+	$(BUILD_DIR)/dcim_layer_controller/Vtb_dcim_layer_controller
+	@ulimit -c 0; if $(BUILD_DIR)/dcim_layer_controller/Vtb_dcim_layer_controller +CORRUPT_EXPECTATION > $(BUILD_DIR)/dcim_layer_controller/negative.log 2>&1; then echo "FAIL: corrupt coordinate expectation accepted"; exit 1; else grep -q 'reader coordinates mismatch' $(BUILD_DIR)/dcim_layer_controller/negative.log && echo "PASS expected controller coordinate rejection"; fi
+
 # S5-A uses the real chip hierarchy, not an arithmetic response stub.
 DCIM_BACKEND_RTL := rtl/dcim_adapter/dcim_u8_offset_correction.sv rtl/dcim_adapter/kws_dcim_backend.sv
 DCIM_CHIP_RTL := $(wildcard ../CIM_CHIP/cell/*.sv ../CIM_CHIP/segment/*.sv ../CIM_CHIP/array/*.sv ../CIM_CHIP/peripheral/*.sv ../CIM_CHIP/chip/*.sv) ../CIM_CHIP/fpga/dcim_pin_master.sv
@@ -139,7 +147,7 @@ test-result-pipeline-iverilog: | $(BUILD_DIR)
 	$(VVP) $(BUILD_DIR)/result_pipeline.vvp
 
 ENGINE_RTL = $(GROUP_RTL) rtl/control/pe_result_controller.sv rtl/control/pe8_result_controller_pipeline.sv rtl/integration/pe_memory_engine.sv
-POT_STREAM_RTL = $(POT_RTL) rtl/datapath/kws_pot_shift_rom.sv rtl/datapath/pe_pot_result_stream.sv
+POT_STREAM_RTL = $(POT_RTL) rtl/datapath/kws_pot_shift_rom.sv rtl/datapath/pot_result_stream.sv
 POT_ENGINE_RTL = $(ENGINE_RTL) $(POT_STREAM_RTL) rtl/integration/pe_pot_engine.sv
 PE_LAYER_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL)
 .PHONY: test-pe-layer-controller lint-pe-layer-controller
@@ -157,8 +165,8 @@ test: test-memory-engine-zp128 test-pot-engine test-pot-stream test-postprocess-
 .PHONY: test-pot-stream test-postprocess-pot test-dcim-offset
 test-pot-stream: | $(BUILD_DIR)
 	@for post in 0 1; do \
-		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_pot_result_stream -Mdir $(BUILD_DIR)/pot_stream_$$post $(POT_STREAM_RTL) tb/datapath/tb_pe_pot_result_stream.sv && \
-		$(BUILD_DIR)/pot_stream_$$post/Vtb_pe_pot_result_stream || exit $$?; \
+		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pot_result_stream -Mdir $(BUILD_DIR)/pot_stream_$$post $(POT_STREAM_RTL) tb/datapath/tb_pot_result_stream.sv && \
+		$(BUILD_DIR)/pot_stream_$$post/Vtb_pot_result_stream || exit $$?; \
 	done
 test-postprocess-pot: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_kws_postprocess_pot -Mdir $(BUILD_DIR)/postprocess_pot $(POT_RTL) $(addprefix rtl/datapath/,relu_uint8_zp127.sv maxpool2x2_uint8.sv kws_postprocess_pot.sv) tb/datapath/tb_kws_postprocess_pot.sv
@@ -302,6 +310,7 @@ lint-layer-weight-loader:
 	test-postprocess test-python-golden lint clean
 
 help:
+	@echo "  make test-dcim-layer-controller / lint-dcim-layer-controller - S5-C controller protocol (not full DCIM arithmetic integration)"
 	@echo "  make test-layer-descriptor / test-layer-controller / lint-s4 - S4 ROM, sequencing and integrated lint"
 	@echo "  make test-s4-software - actual controller-driven FRONTEND/FC_TAIL, two PE8 configurations and seeds"
 	@echo "  make test-activation-path / lint-activation-path - S2 real RAM-reader-pool-writer integration"
