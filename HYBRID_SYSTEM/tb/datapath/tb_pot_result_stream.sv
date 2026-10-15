@@ -8,7 +8,7 @@ module tb_pot_result_stream;
     logic in_last=0,in_error=0,relu_enable=0;
     wire out_valid; logic out_ready=0;
     wire [7:0] output_uint8; wire [4:0] out_channel_id;
-    wire out_last,out_error;
+    wire out_last,out_error,empty;
     pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
     logic [14:0] expected[0:2047],held_payload;
     integer sent=0,received=0,checks=0,cycles=0,full_cycles=0;
@@ -45,6 +45,7 @@ module tb_pot_result_stream;
         cycles++;
         if(rst) begin sent=0; received=0; held=0; end
         else begin
+            if(empty !== (sent==received)) $fatal(1,"empty misses FIFO/in-flight data");
             if(in_ready !== (sent-received<8)) $fatal(1,"capacity/ready policy mismatch");
             if(sent-received==8 && out_valid && out_ready) full_pop++;
             if(held && (!out_valid || held_payload!=={out_error,out_last,out_channel_id,output_uint8}))

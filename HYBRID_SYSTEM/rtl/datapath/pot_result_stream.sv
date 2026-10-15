@@ -14,7 +14,8 @@ module pot_result_stream #(
     output wire out_valid, input logic out_ready,
     output wire [7:0] output_uint8,
     output wire [4:0] out_channel_id,
-    output wire out_last, out_error
+    output wire out_last, out_error,
+    output wire empty // Valid outside reset: includes pipeline reservations.
 );
     wire [4:0] shift_amount;
     wire shift_valid;
@@ -31,6 +32,7 @@ module pot_result_stream #(
     assign {out_error,out_last,out_channel_id,output_uint8}=fifo[rd_ptr];
     generate if (POSTPROCESS_PIPELINED) begin : g_pipeline
     logic [3:0] reserved;
+    assign empty = !rst && reserved == 0;
     logic [7:0] tag [0:2]; // error, relu, last, channel
     wire q_valid;
     wire [7:0] q_data;
@@ -57,6 +59,7 @@ module pot_result_stream #(
         end
     end
     end else begin : g_comb
+        assign empty = !rst && count == 0;
         wire [7:0] q_data;
         wire [7:0] clamped = relu_enable && q_data<128 ? 8'd128 : q_data;
         // No in-flight results: count alone represents occupied capacity.

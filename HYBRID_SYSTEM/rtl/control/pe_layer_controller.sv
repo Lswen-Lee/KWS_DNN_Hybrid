@@ -3,6 +3,8 @@
 // one reader command per PE replay. Data bytes bypass this controller.
 // All endpoints share clk/rst. Owner must prohibit weight reload/host/pool
 // access while busy. Resident metadata describes SUCCESSFULLY loaded weights.
+// pe_compute_done is RAW engine completion; pe_out_* is AFTER quantization.
+// postprocess_empty includes all accepted in-flight and queued results.
 module pe_layer_controller (
     input logic clk, rst,
     input logic cmd_valid,
@@ -31,6 +33,7 @@ module pe_layer_controller (
 
     output logic pe_compute_valid,
     input logic pe_compute_ready, pe_compute_done, pe_compute_error,
+    input logic postprocess_empty,
     output logic [2:0] pe_layer_id,
     output logic pe_relu_enable,
     input logic pe_replay_valid,
@@ -138,7 +141,7 @@ module pe_layer_controller (
                               !reader_active && pe_replay_valid;
     assign pe_replay_ready = !rst && !runtime_bad && state == WAIT_REPLAY &&
                              !reader_active && reader_cmd_ready;
-    assign pe_compute_valid = !rst && !runtime_bad && state == START_PE;
+    assign pe_compute_valid = !rst && !runtime_bad && postprocess_empty && state == START_PE;
     assign pe_layer_id = layer_q;
     assign pe_relu_enable = relu_q;
     assign pe_activation_valid = !rst && !runtime_bad && compute_phase &&
@@ -227,12 +230,18 @@ module pe_layer_controller (
                 end
                 RUN: begin
                     if (pe_done_seen || pe_compute_done) begin
-                        if ((reader_active && !reader_done) || result_count != out_channels_q ||
+                        if ((reader_active && !reader_done) ||
                             next_group_base < out_channels_q) begin
                             error <= 1; state <= FAULT;
-                        end else if (patch_x == out_width-8'd1 && patch_y == out_height-8'd1)
-                            state <= DRAIN_LAYER;
-                        else state <= NEXT_PATCH;
+                        end else if (postprocess_empty) begin
+                            // Raw done may precede quantized output acceptance.
+                            // Once empty, a short result stream is a real error.
+                            if (result_count != out_channels_q) begin
+                                error <= 1; state <= FAULT;
+                            end else if (patch_x == out_width-8'd1 && patch_y == out_height-8'd1)
+                                state <= DRAIN_LAYER;
+                            else state <= NEXT_PATCH;
+                        end
                     end else if (!reader_active && pe_replay_valid) state <= WAIT_REPLAY;
                 end
                 NEXT_PATCH: begin

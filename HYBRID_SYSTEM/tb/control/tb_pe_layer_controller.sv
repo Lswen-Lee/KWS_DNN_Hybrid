@@ -4,6 +4,8 @@
 module tb_pe_layer_controller;
     import kws_system_pkg::*;
     parameter bit RESULT_PIPELINED=0;
+    parameter bit POSTPROCESS_PIPELINED=1;
+    wire postprocess_empty;
     logic clk=0, rst=1;
     always #5 clk=~clk;
     logic cmd_valid=0, cmd_ready, cmd_is_fc=0, cmd_relu_enable=1;
@@ -62,7 +64,8 @@ module tb_pe_layer_controller;
         .out_last(reader_out_last),.busy(),.done(reader_done),.error(reader_error));
     // A test-only interconnect pause presents real backpressure to PE.
     // Both endpoints see exactly the same accepted transaction.
-    logic pause_results=0;
+    logic pause_results=0,hold_results=0;
+    integer early_raw_done=0,drain_wait_cycles=0;
     wire actual_writer_ready;
     assign writer_in_ready=actual_writer_ready && !pause_results;
     feature_map_writer writer (.clk(clk),.rst(rst),
@@ -83,19 +86,29 @@ module tb_pe_layer_controller;
     logic inject_replay_error=0,inject_result_error=0;
     assign pe_replay_k=inject_replay_error ? actual_replay_k ^ 8'd1 : actual_replay_k;
     assign pe_out_error=actual_out_error || inject_result_error;
-    pe_pot_engine #(.PE8_MODE(1),.RESULT_PIPELINED(RESULT_PIPELINED),.POSTPROCESS_PIPELINED(1)) pe (
+    wire raw_valid,raw_ready,raw_last,raw_error;
+    wire signed [31:0] raw_data;
+    wire [4:0] raw_channel;
+    pe_memory_engine #(.PE8_MODE(1),.RESULT_PIPELINED(RESULT_PIPELINED),.INPUT_ZERO_POINT(128)) pe (
         .clk(clk),.rst(rst),.load_valid(load_valid),.load_ready(load_ready),
         .load_k(load_k),.load_channels(load_channels),.load_busy(),.load_done(load_done),
         .load_error(load_error),.layer_ready(layer_ready),.weight_valid(weight_valid),
         .weight_ready(weight_ready),.weight_i8(weight_i8),
         .compute_valid(pe_compute_valid),.compute_ready(pe_compute_ready),
-        .compute_layer_id(pe_layer_id),.relu_enable(pe_relu_enable),.compute_busy(),
+        .compute_busy(),
         .compute_done(pe_compute_done),.compute_error(pe_compute_error),
         .replay_valid(pe_replay_valid),.replay_ready(pe_replay_ready),.replay_k(actual_replay_k),
         .replay_channel_base(pe_replay_channel_base),.activation_valid(pe_activation_valid),
         .activation_ready(pe_activation_ready),.activation_u8(activation_data),
-        .out_valid(pe_out_valid),.out_ready(pe_out_ready),.out_data(result_data),
-        .out_channel_id(pe_out_channel_id),.out_group_last(pe_out_group_last),.out_error(actual_out_error));
+        .out_valid(raw_valid),.out_ready(raw_ready),.out_data(raw_data),
+        .out_channel_id(raw_channel),.out_group_last(raw_last),.out_error(raw_error));
+    pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) post (
+        .clk(clk),.rst(rst),.in_valid(raw_valid),.in_ready(raw_ready),
+        .accumulator(raw_data),.layer_id(pe_layer_id),.channel_id(raw_channel),
+        .in_last(raw_last),.in_error(raw_error),.relu_enable(pe_relu_enable),
+        .out_valid(pe_out_valid),.out_ready(pe_out_ready),.output_uint8(result_data),
+        .out_channel_id(pe_out_channel_id),.out_last(pe_out_group_last),.out_error(actual_out_error),
+        .empty(postprocess_empty));
 
     // Independent mathematical reference and public-interface scoreboards.
     logic [7:0] reference_mem [0:32767];
@@ -142,6 +155,7 @@ module tb_pe_layer_controller;
                 pause_results=1;final_pause++;
             end
         end else pause_results=0;
+        if(hold_results) pause_results=1;
     end
     always @(posedge clk) begin : scoreboard
         integer expected_addr,px,py,ch;
@@ -149,6 +163,11 @@ module tb_pe_layer_controller;
         if(cycles>2000000) $fatal(1,"Watchdog");
         if(rst || !checking) held=0;
         else begin
+            if(pe_compute_done && !postprocess_empty) early_raw_done++;
+            if(dut.pe_done_seen && !postprocess_empty) begin
+                drain_wait_cycles++;
+                if(done || pe_compute_valid || fault) $fatal(1,"advanced before postprocess drain");
+            end
             if(held && (!pe_out_valid || {writer_y,writer_x,pe_out_channel_id,
                 pe_out_group_last,pe_out_error,result_data}!==held_payload))
                 $fatal(1,"Result/tag/patch changed under stall");
@@ -329,9 +348,24 @@ module tb_pe_layer_controller;
         reset_all();load_weights();launch();
         while(!reader_out_valid) @(negedge clk);
         reset_all(); // Cancel in-flight RAM/PE operation together.
+        // FC2 fits in the eight-entry FIFO: raw can finish with sink blocked.
+        load_weights();launch();
+        while(!(pe_compute_valid && pe_compute_ready)) @(negedge clk);
+        @(negedge clk);hold_results=1;
+        while(!pe_compute_done) @(negedge clk);
+        if(postprocess_empty) $fatal(1,"reset test did not reach pending postprocess");
+        repeat(10) begin
+            @(negedge clk);
+            if(done || fault || pe_compute_valid) $fatal(1,"raw done must wait for sink");
+        end
+        reset_all();hold_results=0;
+        repeat(10) @(negedge clk);
+        if(!postprocess_empty || pe_out_valid || done) $fatal(1,"stale result after drain reset");
         run_case(1,4,0,0,0,8,32,144,0,0);
         if(successes!=7 || rejected!=12 || fault_cases!=2 || checks!=229376 || stalls==0)
             $fatal(1,"Coverage missing");
+        if(early_raw_done==0 || drain_wait_cycles==0) $fatal(1,"raw-before-post coverage missing");
+        $display("PASS external post POST=%0d raw_early=%0d drain_wait=%0d pending_reset=1",POSTPROCESS_PIPELINED,early_raw_done,drain_wait_cycles);
         $display("PASS pe_layer_controller PIPE=%0d layers=%0d rejects=%0d faults=%0d RAM_checks=%0d stalls=%0d",
                  RESULT_PIPELINED,successes,rejected,fault_cases,checks,stalls);
         $finish;

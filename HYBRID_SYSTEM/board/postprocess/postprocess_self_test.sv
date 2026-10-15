@@ -39,7 +39,7 @@ module postprocess_self_test #(parameter bit POSTPROCESS_PIPELINED=0) (
         .accumulator(operand_q), .layer_id(layer_q), .channel_id(channel_q),
         .relu_enable(relu_q), .in_last(last_q), .in_error(error_q),
         .out_valid(valid), .out_ready(out_ready), .output_uint8(data_out),
-        .out_channel_id(channel_out), .out_last(last_out), .out_error(error_out));
+        .out_channel_id(channel_out), .out_last(last_out), .out_error(error_out), .empty());
     (* KEEP_HIERARCHY = "yes" *) postprocess_tail tail (
         .clk(clk),.rst(rst),.mode(mode_q),
         .accept(valid && out_ready),.frame_start(first_q),

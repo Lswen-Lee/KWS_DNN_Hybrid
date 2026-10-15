@@ -160,6 +160,14 @@ ENGINE_RTL = $(GROUP_RTL) rtl/control/pe_result_controller.sv rtl/control/pe8_re
 POT_STREAM_RTL = $(POT_RTL) rtl/datapath/kws_pot_shift_rom.sv rtl/datapath/pot_result_stream.sv
 POT_ENGINE_RTL = $(ENGINE_RTL) $(POT_STREAM_RTL) rtl/integration/pe_pot_engine.sv
 PE_LAYER_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL)
+.PHONY: test-pe-external-post
+test-pe-external-post: generate-activation-path-vectors | $(BUILD_DIR)
+	@set -e; for post in 0 1; do for pipe in 0 1; do \
+	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_layer_controller -Mdir $(BUILD_DIR)/external_layer_$${pipe}_$$post $(PE_LAYER_RTL) tb/control/tb_pe_layer_controller.sv; \
+	  $(BUILD_DIR)/external_layer_$${pipe}_$$post/Vtb_pe_layer_controller; \
+	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/external_path_$${pipe}_$$post $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv; \
+	  $(BUILD_DIR)/external_path_$${pipe}_$$post/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=505; \
+	done; done
 .PHONY: test-pe-layer-controller lint-pe-layer-controller
 test: test-pe-layer-controller
 lint: lint-pe-layer-controller

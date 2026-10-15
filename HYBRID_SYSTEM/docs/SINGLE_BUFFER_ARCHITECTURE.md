@@ -42,10 +42,12 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 
 ## 2. 已有模組及重用邊界
 
+2026-10-15使用者明確授權共用後處理第一步，取代下列早期PE封裝限制：共享path改為`pe_memory_engine(INPUT_ZERO_POINT=128)`加外置`pot_result_stream`；PE控制器分開追蹤raw完成與量化排空。原`pe_pot_engine`保留獨立用途。此步尚未將DCIM接進共享PoT，FULL仍拒絕。規格／驗證見[第一步設計](SHARED_POSTPROCESS_STEP1.md)，獨立審查見[Claude prompt](SHARED_POSTPROCESS_STEP1_CLAUDE_PROMPT.md)。不包含其他延後最佳化項目。
+
 | 既有檔案 | 重用方式／限制 |
 |---|---|
-| `rtl/integration/pe_pot_engine.sv` | 初版真實 PE 入口，已含 weight engine、PoT、ReLU、輸出 FIFO；UINT8 結果直接接 writer，不再次量化 |
-| `rtl/integration/pe_memory_engine.sv` | raw INT32 engine；不是本階段預設替換目標，若改為共用後處理須另列架構變更 |
+| `rtl/integration/pe_pot_engine.sv` | 保留獨立封裝與回歸參考；共享path不再例化此封裝 |
+| `rtl/integration/pe_memory_engine.sv` | 共享path的raw INT32 engine，明確設定zp128，後接外置PoT |
 | `rtl/control/pe_group_controller.sv` | 每命令一個 patch/vector，channels 以12為一組，可能要求 replay |
 | `rtl/datapath/pot_result_stream.sv` | 量化、ReLU、FIFO；有 valid/ready |
 | `rtl/datapath/maxpool2x2_uint8.sv` | CHW串流、可變W/H/C；無 out_ready；pool_done不是最後一次記憶體提交 |
@@ -64,12 +66,13 @@ flowchart TB
   LC[Layer Controller：設定操作與區域] --> R[Activation Reader]
   LC --> W[Feature-map Writer]
   M[單一 Activation Buffer：來源區與目的區] --> R
-  R --> PE[既有 pe_pot_engine：PE＋量化＋ReLU]
-  R --> DC[DCIM backend＋對齊格式的後處理]
+  R --> PE[pe_memory_engine：raw INT32]
+  R --> DC[DCIM backend：待接共享path]
   R --> PO[Pool 路徑]
   R --> AR[FC2 八筆結果 → Argmax]
-  PE --> W
-  DC --> W
+  PE --> POST[外置PoT／ReLU／FIFO]
+  DC -.下一步共用.-> POST
+  POST --> W
   PO --> W
   W --> M
 ```

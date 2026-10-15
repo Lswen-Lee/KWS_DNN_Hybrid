@@ -100,7 +100,7 @@ module tb_dcim_layer_memory;
         .accumulator(result_data),.layer_id(post_layer_id),.channel_id({1'b0,filter_id}),
         .in_last(result_last),.in_error(1'b0),.relu_enable(post_relu_enable),
         .out_valid(post_valid),.out_ready(post_ready),.output_uint8(post_data),
-        .out_channel_id(post_channel),.out_last(post_last),.out_error(post_error)
+        .out_channel_id(post_channel),.out_last(post_last),.out_error(post_error),.empty()
     );
 
     logic [7:0] input_bytes[0:5399],golden[0:4367],weights[0:1295],shifts[0:11];

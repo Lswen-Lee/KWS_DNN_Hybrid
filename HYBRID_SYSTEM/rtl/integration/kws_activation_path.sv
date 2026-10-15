@@ -1,5 +1,6 @@
 `timescale 1ns/1ps
 // S3: host / pool / PE share one RAM, reader and writer, without preemption.
+// Shared-postprocess step 1: raw PE and external PoT; DCIM not yet connected.
 // Host ports are local synchronous streams, NOT AXI or a board pin interface.
 module kws_activation_path #(
     parameter bit RESULT_PIPELINED=1'b0,
@@ -86,6 +87,12 @@ module kws_activation_path #(
     wire [7:0] replay_k,pe_data;
     wire [4:0] replay_base,pe_channel;
     wire result_valid,result_ready,result_last,result_error;
+    wire postprocess_empty, raw_valid, raw_ready, raw_last, raw_error;
+    wire signed [31:0] raw_data;
+    wire [4:0] raw_channel;
+    wire raw_enable = !rst && !fault && owner == PE_RUN;
+    wire post_input_ready;
+    assign raw_ready = raw_enable && post_input_ready;
     wire weight_fire=weight_load_valid && weight_load_ready;
 
     // Priority at acceptance only: weights > PE > pool > host load > read.
@@ -216,6 +223,7 @@ module kws_activation_path #(
         .reader_out_valid(owner==PE_RUN && r_valid),.reader_out_last(r_last),.reader_out_ready(pr_ready),
         .pe_compute_valid(compute_valid),.pe_compute_ready(compute_ready),.pe_compute_done(compute_done),
         .pe_compute_error(compute_error),.pe_layer_id(compute_layer),.pe_relu_enable(compute_relu),
+        .postprocess_empty(postprocess_empty),
         .pe_replay_valid(replay_valid),.pe_replay_ready(replay_ready),.pe_replay_k(replay_k),.pe_replay_channel_base(replay_base),
         .pe_activation_valid(activation_valid),.pe_activation_ready(activation_ready),
         .pe_out_valid(result_valid),.pe_out_group_last(result_last),.pe_out_error(result_error),
@@ -226,17 +234,26 @@ module kws_activation_path #(
         .writer_height(pw_height),.writer_channels(pw_channels),.writer_in_valid(pw_valid),
         .writer_channel(pw_channel),.writer_x(pw_x),.writer_y(pw_y)
     );
-    pe_pot_engine #(.PE8_MODE(1'b1),.RESULT_PIPELINED(RESULT_PIPELINED),
-        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) pe_engine (
+    pe_memory_engine #(.PE8_MODE(1'b1),.RESULT_PIPELINED(RESULT_PIPELINED),
+        .INPUT_ZERO_POINT(128)) pe_engine (
         .clk(clk),.rst(rst),.load_valid(weight_fire && weight_layer_id<=4),.load_ready(el_ready),
         .load_k(weight_k),.load_channels(weight_channels),.load_busy(),.load_done(el_done),.load_error(el_error),
         .layer_ready(engine_layer_ready),.weight_valid(owner==WEIGHT_LOAD && weight_valid),.weight_ready(ew_ready),.weight_i8(weight_i8),
-        .compute_valid(compute_valid),.compute_ready(compute_ready),.compute_layer_id(compute_layer),.relu_enable(compute_relu),
+        .compute_valid(compute_valid),.compute_ready(compute_ready),
         .compute_busy(),.compute_done(compute_done),.compute_error(compute_error),
         .replay_valid(replay_valid),.replay_ready(replay_ready),.replay_k(replay_k),.replay_channel_base(replay_base),
         .activation_valid(activation_valid),.activation_ready(activation_ready),.activation_u8(r_data),
-        .out_valid(result_valid),.out_ready(result_ready),.out_data(pe_data),.out_channel_id(pe_channel),
-        .out_group_last(result_last),.out_error(result_error)
+        .out_valid(raw_valid),.out_ready(raw_ready),.out_data(raw_data),.out_channel_id(raw_channel),
+        .out_group_last(raw_last),.out_error(raw_error)
+    );
+    // Step 1: one external postprocessor; DCIM selection is a later milestone.
+    pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) postprocess (
+        .clk(clk),.rst(rst),.in_valid(raw_valid && raw_enable),.in_ready(post_input_ready),
+        .accumulator(raw_data),.layer_id(compute_layer),.channel_id(raw_channel),
+        .in_last(raw_last),.in_error(raw_error),.relu_enable(compute_relu),
+        .out_valid(result_valid),.out_ready(result_ready),.output_uint8(pe_data),
+        .out_channel_id(pe_channel),.out_last(result_last),.out_error(result_error),
+        .empty(postprocess_empty)
     );
     activation_buffer memory (
         .clk(clk),.rst(rst),.wr_en(w_en && !fault),.wr_addr(w_addr),.wr_data(w_data),

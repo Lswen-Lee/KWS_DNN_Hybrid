@@ -4,6 +4,7 @@
 module tb_pe_conv1_pool_memory;
     import kws_system_pkg::*;
     parameter bit RESULT_PIPELINED=0;
+    parameter bit POSTPROCESS_PIPELINED=1;
     logic clk=0,rst=1;
     always #5 clk=~clk;
     logic load_valid=0,load_ready,load_data_valid=0,load_data_ready;
@@ -35,7 +36,7 @@ module tb_pe_conv1_pool_memory;
     logic [14:0] pe_src_base=8064,pe_dst_base=10080;
     logic [7:0] pe_width=63,pe_height=32,pe_vector_length=9;
     logic [5:0] pe_input_channels=1,pe_output_channels=12;
-    kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED)) dut (.*);
+    kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED),.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
 
     logic [7:0] input_bytes[0:8063],pool1_bytes[0:2015];
     logic [7:0] conv1_bytes[0:21959],relu1_bytes[0:21959],pool2_bytes[0:5399];

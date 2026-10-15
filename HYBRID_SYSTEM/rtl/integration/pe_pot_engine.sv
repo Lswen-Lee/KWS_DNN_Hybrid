@@ -31,6 +31,7 @@ module pe_pot_engine #(
     output wire out_group_last, out_error
 );
     logic active, core_finished;
+    wire postprocess_empty;
     logic [5:0] channels, retired;
     logic [2:0] layer_q;
     logic relu_q;
@@ -61,7 +62,7 @@ module pe_pot_engine #(
         .accumulator(raw_data), .layer_id(layer_q), .channel_id(raw_channel),
         .in_last(raw_last), .in_error(raw_error), .relu_enable(relu_q),
         .out_valid(out_valid), .out_ready(out_ready), .output_uint8(out_data),
-        .out_channel_id(out_channel_id), .out_last(out_group_last), .out_error(out_error)
+        .out_channel_id(out_channel_id), .out_last(out_group_last), .out_error(out_error), .empty(postprocess_empty)
     );
     always_ff @(posedge clk) begin
         if(rst) begin
@@ -77,7 +78,7 @@ module pe_pot_engine #(
                 if(core_done) core_finished<=1;
                 if(core_error || (out_valid && out_ready && out_error)) compute_error<=1;
                 if(out_valid && out_ready) retired<=retired+1'b1;
-                if(core_finished && retired==channels) begin
+                if(core_finished && retired==channels && postprocess_empty) begin
                     active<=0; compute_done<=1;
                 end
             end
