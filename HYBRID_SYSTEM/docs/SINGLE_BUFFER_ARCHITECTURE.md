@@ -177,6 +177,8 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 
 ### 共用驗證／文件／Vivado工作
 
+2026-10-15：新增[S5-C架構審查規劃書](S5C_ARCHITECTURE_REVIEW_PLAN.md)，供Claude獨立檢查整層控制功能與冗餘。內容為待審查提案，尚未新增controller RTL或TB；介面、尺寸策略與錯誤清理契約須確認後實作，不改變S5-C/D順序。
+
 | 狀態 | 檔案 | 工作 |
 |---|---|---|
 | 驗證通過 | `scripts/generate_activation_path_vectors.py` | 依使用者要求整理真實軟體匯出、獨立數學預檢、hex與manifest；隨機握手seed在TB控制 |
