@@ -76,6 +76,16 @@ make test-s4-software lint-s4 lint-pe-layer-controller
 
 ## 結果
 
+### Claude F1～F3審查修正
+
+- F1：保留empty gate，在operation_phase內拒絕非compute_phase的pe_out_valid，避免多餘結果造成START_PE永久等待。IDLE/CONFIG不屬此項檢查範圍；共享top的殘留保護另處理。正式TB在真實NEXT_PATCH注入一拍PoT raw輸入，並在DRAIN_LAYER注入量化結果valid，要求20拍內error/FAULT與鎖定，兩種PoT配置均重跑。
+- F2：Makefile三處負向測試改用grep，不再依賴rg。
+- F3：external-post入口加入指定Commit mismatch的Golden破壞測試；log增加POST；排空檢查包含raw done當拍。原stalls實際是host read的valid&&!ready觀察計數，不是PE後處理反壓，也不是單純刺激次數，改名顯示host_read_stall_cycles以免誤解。
+
+2026-10-16確認正式回歸完成：`make test-pe-external-post test-s4-software lint-s4 lint-pe-layer-controller` exit 0。四種配置均通過新增的兩項late-result fault測試、正常運算與pending reset；external與S4損壞Golden均被指定訊息拒絕。完整暫存log為`/tmp/review-fixes.log`，可使用上述命令重建，不將scratchpad結果算入正式驗收。
+
+擴大排空monitor到raw done當拍後，四種配置的`drain_wait`分別為3402、2852、8979、9290（下表順序）；相較原表每項增加1841，正好是先前漏計的raw done當拍。此變化是驗證計數範圍修正，不是RTL增加了1841拍延遲。每配置另新增2個故障案例，獨立印出`PASS late-result`，原summary的`faults=2`仍只指原有案例。
+
 2026-10-15，Verilator 5.030實測全部通過：
 
 | raw pipeline | PoT pipeline | raw提早完成次數 | 等待排空拍數 | controller結果 |

@@ -42,6 +42,8 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 
 ## 2. 已有模組及重用邊界
 
+2026-10-16共用後處理前置審查F1～F3已修正：保留排空gate並將運算階段外多餘PE結果轉FAULT；正式TB補NEXT_PATCH／DRAIN_LAYER異常、raw done當拍排空檢查與external Golden負測；Makefile三處改grep、log標識POST與Host讀回反壓。`test-pe-external-post`四配置、`test-s4-software`兩pipeline×兩seed及S4／PE controller lint全部通過。此項尚未接入DCIM共享PoT；完整結果與限制見SHARED_POSTPROCESS_STEP1.md。
+
 2026-10-15使用者明確授權共用後處理第一步，取代下列早期PE封裝限制：共享path改為`pe_memory_engine(INPUT_ZERO_POINT=128)`加外置`pot_result_stream`；PE控制器分開追蹤raw完成與量化排空。原`pe_pot_engine`保留獨立用途。此步尚未將DCIM接進共享PoT，FULL仍拒絕。規格／驗證見[第一步設計](SHARED_POSTPROCESS_STEP1.md)，獨立審查見[Claude prompt](SHARED_POSTPROCESS_STEP1_CLAUDE_PROMPT.md)。不包含其他延後最佳化項目。
 
 | 既有檔案 | 重用方式／限制 |

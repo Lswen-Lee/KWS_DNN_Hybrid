@@ -70,7 +70,7 @@ test-s4-software: generate-activation-path-vectors | $(BUILD_DIR)
 			cat $(BUILD_DIR)/s4_$$pipe/seed_$$seed.log; test $$status -eq 0 || exit $$status; \
 		done; \
 	done
-	@ulimit -c 0; if $(BUILD_DIR)/s4_0/Vtb_kws_s4_software +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/s4_0/negative_golden.log 2>&1; then echo "FAIL: corrupted S4 golden accepted"; exit 1; else rg -q 'S4 commit mismatch' $(BUILD_DIR)/s4_0/negative_golden.log && echo "PASS expected S4 corrupted-golden rejection"; fi
+	@ulimit -c 0; if $(BUILD_DIR)/s4_0/Vtb_kws_s4_software +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/s4_0/negative_golden.log 2>&1; then echo "FAIL: corrupted S4 golden accepted"; exit 1; else grep -q 'S4 commit mismatch' $(BUILD_DIR)/s4_0/negative_golden.log && echo "PASS expected S4 corrupted-golden rejection"; fi
 test: test-layer-descriptor test-layer-controller
 lint: lint-s4
 .PHONY: generate-activation-path-vectors test-activation-path-vectors test-pe-conv1-pool-memory
@@ -86,7 +86,7 @@ test-pe-conv1-pool-memory: generate-activation-path-vectors | $(BUILD_DIR)
 			cat $(BUILD_DIR)/pe_conv1_pool_$$pipe/seed_$$seed.log; test $$status -eq 0 || exit $$status; \
 		done; \
 	done
-	@ulimit -c 0; if $(BUILD_DIR)/pe_conv1_pool_0/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/pe_conv1_pool_0/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else rg -q 'Commit mismatch' $(BUILD_DIR)/pe_conv1_pool_0/negative_golden.log && echo "PASS expected corrupted-golden rejection"; fi
+	@ulimit -c 0; if $(BUILD_DIR)/pe_conv1_pool_0/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/pe_conv1_pool_0/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else grep -q 'Commit mismatch' $(BUILD_DIR)/pe_conv1_pool_0/negative_golden.log && echo "PASS expected corrupted-golden rejection"; fi
 .PHONY: test-activation-path lint-activation-path test-activation-path-software
 test-activation-path-software: test-activation-path
 	$(BUILD_DIR)/activation_path/Vtb_kws_activation_path +SOFTWARE_ROOT=$(abspath $(SOFTWARE_ACTIVATION_DIR))
@@ -122,7 +122,7 @@ build-activation-buffer: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ --top-module tb_activation_buffer -Mdir $(BUILD_DIR)/activation_buffer $(ACTIVATION_RTL) tb/memory/tb_activation_buffer.sv
 test-activation-buffer: build-activation-buffer
 	$(BUILD_DIR)/activation_buffer/Vtb_activation_buffer
-	@ulimit -c 0; if $(BUILD_DIR)/activation_buffer/Vtb_activation_buffer +collision > $(BUILD_DIR)/activation_buffer/collision.log 2>&1; then echo "FAIL: collision accepted"; exit 1; else rg -q 'ACTIVATION_BUFFER_COLLISION' $(BUILD_DIR)/activation_buffer/collision.log && echo "PASS expected collision rejection"; fi
+	@ulimit -c 0; if $(BUILD_DIR)/activation_buffer/Vtb_activation_buffer +collision > $(BUILD_DIR)/activation_buffer/collision.log 2>&1; then echo "FAIL: collision accepted"; exit 1; else grep -q 'ACTIVATION_BUFFER_COLLISION' $(BUILD_DIR)/activation_buffer/collision.log && echo "PASS expected collision rejection"; fi
 lint-activation-buffer:
 	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM --top-module activation_buffer $(ACTIVATION_RTL)
 
@@ -168,6 +168,7 @@ test-pe-external-post: generate-activation-path-vectors | $(BUILD_DIR)
 	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/external_path_$${pipe}_$$post $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv; \
 	  $(BUILD_DIR)/external_path_$${pipe}_$$post/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=505; \
 	done; done
+	@ulimit -c 0; if $(BUILD_DIR)/external_path_0_0/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/external_path_0_0/negative.log 2>&1; then echo 'FAIL external golden accepted'; exit 1; else grep -q 'Commit mismatch' $(BUILD_DIR)/external_path_0_0/negative.log && echo 'PASS external corrupted golden rejection'; fi
 .PHONY: test-pe-layer-controller lint-pe-layer-controller
 test: test-pe-layer-controller
 lint: lint-pe-layer-controller

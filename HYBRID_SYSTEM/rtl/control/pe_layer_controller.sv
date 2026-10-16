@@ -126,7 +126,8 @@ module pe_layer_controller (
          {1'b0,pe_replay_channel_base} != next_group_base);
     assign runtime_bad = operation_phase &&
         (reader_error || writer_error || !resident_matches ||
-         (compute_phase && pe_compute_error) || result_bad || replay_bad);
+         (compute_phase && pe_compute_error) || result_bad || replay_bad ||
+         (!compute_phase && pe_out_valid));
 
     // 3. Command/data control routing. Actual 8-bit payloads bypass the FSM.
     assign reader_mode = fc_q ? READ_LINEAR : READ_PATCH;

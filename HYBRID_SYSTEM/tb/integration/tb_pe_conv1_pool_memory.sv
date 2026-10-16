@@ -312,8 +312,8 @@ module tb_pe_conv1_pool_memory;
         load_weights(4,32,8);run_pe(4,0);scan_ram("post-reset recovery, RAM retained");
         if(operations!=8 || rejections!=8 || weight_loads!=5 || checks!=327680 || stalls==0)
             $fatal(1,"Coverage missing ops=%0d rejects=%0d loads=%0d checks=%0d",operations,rejections,weight_loads,checks);
-        $display("PASS S3 software PIPE=%0d operations=%0d rejects=%0d loads=%0d RAM_checks=%0d stalls=%0d",
-                 RESULT_PIPELINED,operations,rejections,weight_loads,checks,stalls);
+        $display("PASS S3 software PIPE=%0d POST=%0d operations=%0d rejects=%0d loads=%0d RAM_checks=%0d host_read_stall_cycles=%0d",
+                 RESULT_PIPELINED,POSTPROCESS_PIPELINED,operations,rejections,weight_loads,checks,stalls);
         $finish;
     end
 endmodule

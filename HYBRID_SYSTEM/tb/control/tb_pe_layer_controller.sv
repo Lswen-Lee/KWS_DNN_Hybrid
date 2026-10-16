@@ -87,6 +87,9 @@ module tb_pe_layer_controller;
     assign pe_replay_k=inject_replay_error ? actual_replay_k ^ 8'd1 : actual_replay_k;
     assign pe_out_error=actual_out_error || inject_result_error;
     wire raw_valid,raw_ready,raw_last,raw_error;
+    logic inject_extra_raw=0,inject_late_output=0;
+    wire actual_post_valid;
+    assign pe_out_valid=actual_post_valid || inject_late_output;
     wire signed [31:0] raw_data;
     wire [4:0] raw_channel;
     pe_memory_engine #(.PE8_MODE(1),.RESULT_PIPELINED(RESULT_PIPELINED),.INPUT_ZERO_POINT(128)) pe (
@@ -103,10 +106,10 @@ module tb_pe_layer_controller;
         .out_valid(raw_valid),.out_ready(raw_ready),.out_data(raw_data),
         .out_channel_id(raw_channel),.out_group_last(raw_last),.out_error(raw_error));
     pot_result_stream #(.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) post (
-        .clk(clk),.rst(rst),.in_valid(raw_valid),.in_ready(raw_ready),
+        .clk(clk),.rst(rst),.in_valid(raw_valid || inject_extra_raw),.in_ready(raw_ready),
         .accumulator(raw_data),.layer_id(pe_layer_id),.channel_id(raw_channel),
         .in_last(raw_last),.in_error(raw_error),.relu_enable(pe_relu_enable),
-        .out_valid(pe_out_valid),.out_ready(pe_out_ready),.output_uint8(result_data),
+        .out_valid(actual_post_valid),.out_ready(pe_out_ready),.output_uint8(result_data),
         .out_channel_id(pe_out_channel_id),.out_last(pe_out_group_last),.out_error(actual_out_error),
         .empty(postprocess_empty));
 
@@ -164,7 +167,7 @@ module tb_pe_layer_controller;
         if(rst || !checking) held=0;
         else begin
             if(pe_compute_done && !postprocess_empty) early_raw_done++;
-            if(dut.pe_done_seen && !postprocess_empty) begin
+            if((pe_compute_done || dut.pe_done_seen) && !postprocess_empty) begin
                 drain_wait_cycles++;
                 if(done || pe_compute_valid || fault) $fatal(1,"advanced before postprocess drain");
             end
@@ -225,6 +228,7 @@ module tb_pe_layer_controller;
     task automatic reset_all;
         @(negedge clk);checking=0;cmd_valid=0;rst=1;resident_valid=0;
         inject_replay_error=0;inject_result_error=0;
+        inject_extra_raw=0;inject_late_output=0;
         repeat(3) @(negedge clk);
         rst=0;
         @(negedge clk);
@@ -368,6 +372,31 @@ module tb_pe_layer_controller;
         $display("PASS external post POST=%0d raw_early=%0d drain_wait=%0d pending_reset=1",POSTPROCESS_PIPELINED,early_raw_done,drain_wait_cycles);
         $display("PASS pe_layer_controller PIPE=%0d layers=%0d rejects=%0d faults=%0d RAM_checks=%0d stalls=%0d",
                  RESULT_PIPELINED,successes,rejected,fault_cases,checks,stalls);
+        // Public-interface fault stimuli; never force the FSM state.
+        for(integer scenario=0;scenario<2;scenario++) begin
+            reset_all();
+            is_fc=0;layer=0;w=4;h=3;ci=1;co=12;k=9;src=0;dst=100;ow=2;oh=1;
+            load_weights();initialize_memory();launch();
+            if(scenario==0) begin
+                while(dut.state!=dut.NEXT_PATCH) @(negedge clk);
+                inject_extra_raw=1;
+                @(negedge clk);inject_extra_raw=0;
+            end else begin
+                while(dut.state!=dut.DRAIN_LAYER) @(negedge clk);
+                inject_late_output=1;
+            end
+            begin : wait_fault
+                integer timeout_count;
+                timeout_count=0;
+                while(!fault && timeout_count<20) begin @(negedge clk);timeout_count++;end
+                if(!fault || !error) $fatal(1,"late result did not fault scenario=%0d",scenario);
+            end
+            inject_late_output=0;
+            repeat(3) @(negedge clk);
+            if(!fault || error || cmd_ready) $fatal(1,"late result fault not sticky");
+        end
+        reset_all();
+        $display("PASS late-result NEXT_PATCH raw and DRAIN_LAYER output faults POST=%0d",POSTPROCESS_PIPELINED);
         $finish;
     end
 endmodule

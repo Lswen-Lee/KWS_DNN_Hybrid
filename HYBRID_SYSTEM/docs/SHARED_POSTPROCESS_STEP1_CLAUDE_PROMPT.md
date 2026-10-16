@@ -12,6 +12,10 @@
 
 確認以下問題：
 
+- F1修正是否保留empty gate，且非compute phase的額外結果會FAULT而非卡住？正式TB的NEXT_PATCH raw注入與DRAIN_LAYER output注入是否真的抵達目標階段？兩種PoT配置是否都覆蓋？
+- F2三處負向測試是否不再依賴rg？F3 external-post是否要求Golden破壞後出現指定Commit mismatch，而非把任意程式失敗當成功？
+- 排空monitor是否包含pe_compute_done當拍？log的POST及host_read_stall_cycles是否正確標識配置與反壓位置？
+
 - path是否真的只例化一份外置PoT，raw PE明確設zp128？是否保持Host/Pool/PE互斥？
 - raw done與quantized output是否分開計算？pipeline未排空是否可能更新patch或釋放owner？
 - empty是否涵蓋reserved在途資料，不只是out_valid？reset契約是否一致？
