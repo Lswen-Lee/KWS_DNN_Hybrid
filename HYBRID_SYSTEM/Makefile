@@ -48,7 +48,33 @@ test-dcim-backend: | $(BUILD_DIR)
 	@ulimit -c 0; if $(BUILD_DIR)/dcim_backend/Vtb_kws_dcim_backend +CORRUPT_GOLDEN > $(BUILD_DIR)/dcim_backend/negative_golden.log 2>&1; then echo "FAIL: corrupted golden accepted"; exit 1; else grep -q 'result mismatch' $(BUILD_DIR)/dcim_backend/negative_golden.log && echo "PASS expected S5-A corrupted-golden rejection"; fi
 
 ACTIVATION_RTL := rtl/kws_system_pkg.sv rtl/memory/activation_buffer.sv
-ACTIVATION_PATH_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/control/pe_layer_controller.sv $(POT_ENGINE_RTL) rtl/integration/kws_activation_path.sv
+ACTIVATION_PATH_RTL = $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv rtl/control/feature_map_writer.sv rtl/datapath/maxpool2x2_uint8.sv rtl/control/pool_transfer_controller.sv rtl/control/pe_layer_controller.sv rtl/control/dcim_layer_controller.sv $(DCIM_SUBSYSTEM_RTL) $(POT_ENGINE_RTL) rtl/integration/kws_activation_path.sv
+# The real chip has asynchronous cell reset and synchronous master reset.
+# Suppress only this known mixed-reset-net diagnostic for integrated paths.
+PATH_LINT_FLAGS := -Wno-SYNCASYNCNET
+.PHONY: test-shared-postprocess
+.PHONY: test-shared-review
+# Focused review: no full Conv2/3 sweep. Reuses the real integrated TB.
+test-shared-review: generate-activation-path-vectors | $(BUILD_DIR)
+	@set -e; ulimit -c 0; for post in 0 1; do \
+	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-SYNCASYNCNET -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_kws_shared_postprocess -Mdir $(BUILD_DIR)/shared_post_$$post $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_shared_postprocess.sv; \
+	  exe=$(BUILD_DIR)/shared_post_$$post/Vtb_kws_shared_postprocess; \
+	  $$exe +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +REVIEW_ONLY > $(BUILD_DIR)/shared_post_$$post/review.log 2>&1; \
+	  grep '^PASS' $(BUILD_DIR)/shared_post_$$post/review.log; \
+	  for kind in RAW COMMIT; do \
+	    log=$(BUILD_DIR)/shared_post_$$post/negative_$$kind.log; \
+	    if $$exe +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +REVIEW_ONLY +CORRUPT_$$kind > $$log 2>&1; then echo "FAIL $$kind corruption accepted"; exit 1; fi; \
+	    if [ $$kind = RAW ]; then grep -q 'PE raw mismatch' $$log; else grep -q 'shared commit mismatch' $$log; fi; \
+	    echo "PASS review negative $$kind POST=$$post"; \
+	  done; \
+	done
+test-shared-postprocess: generate-activation-path-vectors | $(BUILD_DIR)
+	@set -e; for post in 0 1; do \
+	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-SYNCASYNCNET -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_kws_shared_postprocess -Mdir $(BUILD_DIR)/shared_post_$$post $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_shared_postprocess.sv; \
+	  $(BUILD_DIR)/shared_post_$$post/Vtb_kws_shared_postprocess +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) > $(BUILD_DIR)/shared_post_$$post/software.log 2>&1 || { tail -30 $(BUILD_DIR)/shared_post_$$post/software.log; exit 1; }; \
+	  cat $(BUILD_DIR)/shared_post_$$post/software.log; \
+	done
+	@ulimit -c 0; if $(BUILD_DIR)/shared_post_0/Vtb_kws_shared_postprocess +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/shared_post_0/negative.log 2>&1; then echo 'FAIL shared golden accepted'; exit 1; else grep -q 'shared post mismatch' $(BUILD_DIR)/shared_post_0/negative.log && echo 'PASS shared corrupted golden rejection'; fi
 SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
 SOFTWARE_WEIGHT_DIR ?= ../../layer_weights_int8_pot_ceil_zp128
 S4_CONTROL_RTL := rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv
@@ -61,10 +87,10 @@ test-layer-controller: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-UNUSEDPARAM -Wno-BLKSEQ --top-module tb_layer_controller -Mdir $(BUILD_DIR)/layer_controller $(S4_CONTROL_RTL) tb/control/tb_layer_controller.sv
 	$(BUILD_DIR)/layer_controller/Vtb_layer_controller
 lint-s4:
-	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_inference_top $(S4_RTL)
+	$(VERILATOR) --lint-only -Wall $(PATH_LINT_FLAGS) -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_inference_top $(S4_RTL)
 test-s4-software: generate-activation-path-vectors | $(BUILD_DIR)
 	@for pipe in 0 1; do \
-		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_kws_s4_software -Mdir $(BUILD_DIR)/s4_$$pipe $(S4_RTL) tb/integration/tb_kws_s4_software.sv || exit $$?; \
+		$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_kws_s4_software -Mdir $(BUILD_DIR)/s4_$$pipe $(S4_RTL) tb/integration/tb_kws_s4_software.sv || exit $$?; \
 		for seed in 505 128; do \
 			$(BUILD_DIR)/s4_$$pipe/Vtb_kws_s4_software +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$$seed > $(BUILD_DIR)/s4_$$pipe/seed_$$seed.log 2>&1; status=$$?; \
 			cat $(BUILD_DIR)/s4_$$pipe/seed_$$seed.log; test $$status -eq 0 || exit $$status; \
@@ -80,7 +106,7 @@ generate-activation-path-vectors:
 	python3 scripts/generate_activation_path_vectors.py --activations "$(SOFTWARE_ACTIVATION_DIR)" --weights "$(SOFTWARE_WEIGHT_DIR)"
 test-pe-conv1-pool-memory: generate-activation-path-vectors | $(BUILD_DIR)
 	@for pipe in 0 1; do \
-		$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/pe_conv1_pool_$$pipe $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv || exit $$?; \
+		$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/pe_conv1_pool_$$pipe $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv || exit $$?; \
 		for seed in 505 128; do \
 			$(BUILD_DIR)/pe_conv1_pool_$$pipe/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$$seed > $(BUILD_DIR)/pe_conv1_pool_$$pipe/seed_$$seed.log 2>&1; status=$$?; \
 			cat $(BUILD_DIR)/pe_conv1_pool_$$pipe/seed_$$seed.log; test $$status -eq 0 || exit $$status; \
@@ -93,10 +119,10 @@ test-activation-path-software: test-activation-path
 test: test-activation-path
 lint: lint-activation-path
 test-activation-path: | $(BUILD_DIR)
-	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module tb_kws_activation_path -Mdir $(BUILD_DIR)/activation_path $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_activation_path.sv
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module tb_kws_activation_path -Mdir $(BUILD_DIR)/activation_path $(ACTIVATION_PATH_RTL) tb/integration/tb_kws_activation_path.sv
 	$(BUILD_DIR)/activation_path/Vtb_kws_activation_path
 lint-activation-path:
-	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_activation_path $(ACTIVATION_PATH_RTL)
+	$(VERILATOR) --lint-only -Wall $(PATH_LINT_FLAGS) -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_activation_path $(ACTIVATION_PATH_RTL)
 READER_RTL := $(ACTIVATION_RTL) rtl/datapath/activation_reader.sv
 .PHONY: test-activation-reader lint-activation-reader
 test: test-activation-reader
@@ -165,7 +191,7 @@ test-pe-external-post: generate-activation-path-vectors | $(BUILD_DIR)
 	@set -e; for post in 0 1; do for pipe in 0 1; do \
 	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_layer_controller -Mdir $(BUILD_DIR)/external_layer_$${pipe}_$$post $(PE_LAYER_RTL) tb/control/tb_pe_layer_controller.sv; \
 	  $(BUILD_DIR)/external_layer_$${pipe}_$$post/Vtb_pe_layer_controller; \
-	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/external_path_$${pipe}_$$post $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv; \
+	  $(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$$pipe" "-GPOSTPROCESS_PIPELINED=1'b$$post" --top-module tb_pe_conv1_pool_memory -Mdir $(BUILD_DIR)/external_path_$${pipe}_$$post $(ACTIVATION_PATH_RTL) tb/integration/tb_pe_conv1_pool_memory.sv; \
 	  $(BUILD_DIR)/external_path_$${pipe}_$$post/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=505; \
 	done; done
 	@ulimit -c 0; if $(BUILD_DIR)/external_path_0_0/Vtb_pe_conv1_pool_memory +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(BUILD_DIR)/external_path_0_0/negative.log 2>&1; then echo 'FAIL external golden accepted'; exit 1; else grep -q 'Commit mismatch' $(BUILD_DIR)/external_path_0_0/negative.log && echo 'PASS external corrupted golden rejection'; fi

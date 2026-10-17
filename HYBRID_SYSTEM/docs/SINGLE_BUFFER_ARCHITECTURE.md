@@ -42,6 +42,8 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 
 ## 2. 已有模組及重用邊界
 
+2026-10-16第二批（功能模擬通過）：`kws_activation_path`新增DCIM_RUN、獨立resident與權重目的選擇，共用原Reader/Writer/RAM與唯一PoT；DCIM controller新增empty輸入。兩種PoT各通過四次PE/DCIM切換、完整Conv2→Pool3→Conv3→Pool4與131072筆RAM讀回，既有回歸完成。Claude另回報scratchpad回歸含獨立DCIM整層測試通過。2026-10-17追加審查修正：Idle raw殘留同時阻擋握手並FAULT、DCIM count接0、非法權重請求使resident失效的契約寫明；僅執行定向補測，結果見[第二步](SHARED_POSTPROCESS_STEP2.md)、[Claude審查](SHARED_POSTPROCESS_STEP2_CLAUDE_PROMPT.md)。S4 scheduler仍未接DCIM，FULL仍拒絕。下列較早「尚未接共享path」為歷史進度，應以本條最新狀態為準；Vivado／實體CDC／板測仍未驗證。
+
 2026-10-16共用後處理前置審查F1～F3已修正：保留排空gate並將運算階段外多餘PE結果轉FAULT；正式TB補NEXT_PATCH／DRAIN_LAYER異常、raw done當拍排空檢查與external Golden負測；Makefile三處改grep、log標識POST與Host讀回反壓。`test-pe-external-post`四配置、`test-s4-software`兩pipeline×兩seed及S4／PE controller lint全部通過。此項尚未接入DCIM共享PoT；完整結果與限制見SHARED_POSTPROCESS_STEP1.md。
 
 2026-10-15使用者明確授權共用後處理第一步，取代下列早期PE封裝限制：共享path改為`pe_memory_engine(INPUT_ZERO_POINT=128)`加外置`pot_result_stream`；PE控制器分開追蹤raw完成與量化排空。原`pe_pot_engine`保留獨立用途。此步尚未將DCIM接進共享PoT，FULL仍拒絕。規格／驗證見[第一步設計](SHARED_POSTPROCESS_STEP1.md)，獨立審查見[Claude prompt](SHARED_POSTPROCESS_STEP1_CLAUDE_PROMPT.md)。不包含其他延後最佳化項目。

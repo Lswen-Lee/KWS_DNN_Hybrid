@@ -31,6 +31,7 @@ module tb_dcim_layer_memory;
     logic dcim_activation_valid,dcim_activation_ready;
     logic dcim_patch_valid,dcim_patch_ready,dcim_patch_done,dcim_error;
     logic raw_path_enable,dcim_source_error;
+    wire postprocess_empty;
     logic [2:0] post_layer_id;
     logic post_relu_enable,post_valid,post_last,post_error,post_ready;
     logic [4:0] post_channel;
@@ -100,7 +101,7 @@ module tb_dcim_layer_memory;
         .accumulator(result_data),.layer_id(post_layer_id),.channel_id({1'b0,filter_id}),
         .in_last(result_last),.in_error(1'b0),.relu_enable(post_relu_enable),
         .out_valid(post_valid),.out_ready(post_ready),.output_uint8(post_data),
-        .out_channel_id(post_channel),.out_last(post_last),.out_error(post_error),.empty()
+        .out_channel_id(post_channel),.out_last(post_last),.out_error(post_error),.empty(postprocess_empty)
     );
 
     logic [7:0] input_bytes[0:5399],golden[0:4367],weights[0:1295],shifts[0:11];

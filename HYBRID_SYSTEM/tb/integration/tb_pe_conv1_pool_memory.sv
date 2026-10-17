@@ -36,7 +36,11 @@ module tb_pe_conv1_pool_memory;
     logic [14:0] pe_src_base=8064,pe_dst_base=10080;
     logic [7:0] pe_width=63,pe_height=32,pe_vector_length=9;
     logic [5:0] pe_input_channels=1,pe_output_channels=12;
-    kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED),.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
+    kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED),.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (
+        .clk_cim(clk),.rst_cim(rst),.weight_backend(1'b0),
+        .dcim_cmd_valid(1'b0),.dcim_cmd_ready(),.dcim_layer_id(3'd0),.dcim_relu_enable(1'b0),
+        .dcim_src_base(15'd0),.dcim_dst_base(15'd0),.dcim_width(8'd0),.dcim_height(8'd0),
+        .dcim_done(),.dcim_error(),.dcim_resident_valid(),.*);
 
     logic [7:0] input_bytes[0:8063],pool1_bytes[0:2015];
     logic [7:0] conv1_bytes[0:21959],relu1_bytes[0:21959],pool2_bytes[0:5399];

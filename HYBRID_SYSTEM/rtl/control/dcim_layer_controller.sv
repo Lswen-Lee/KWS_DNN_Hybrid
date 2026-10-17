@@ -32,6 +32,7 @@ module dcim_layer_controller (
     output logic [2:0] post_layer_id,
     output logic post_relu_enable,
     input logic post_valid, post_last, post_error,
+    input logic postprocess_empty,
     input logic [4:0] post_channel,
     output logic post_ready,
 
@@ -114,7 +115,7 @@ module dcim_layer_controller (
     assign post_layer_id = layer_q;
     assign post_relu_enable = relu_q;
     assign reader_cmd_valid = !rst && !runtime_bad && state == START_READER;
-    assign dcim_patch_valid = !rst && !runtime_bad && state == START_PATCH;
+    assign dcim_patch_valid = !rst && !runtime_bad && state == START_PATCH && postprocess_empty;
     assign writer_cmd_valid = !rst && !runtime_bad && state == START_WRITER;
     assign raw_path_enable = !rst && !runtime_bad && state == RUN_PATCH;
     assign dcim_activation_valid = raw_path_enable && !reader_done_seen && reader_out_valid;
@@ -169,7 +170,7 @@ module dcim_layer_controller (
                 end
                 START_READER: if (reader_cmd_valid && reader_cmd_ready) state <= RUN_PATCH;
                 RUN_PATCH: if ((reader_done_seen || reader_done) &&
-                              (dcim_done_seen || dcim_patch_done) && result_after == 12) begin
+                              (dcim_done_seen || dcim_patch_done) && result_after == 12 && postprocess_empty) begin
                     if (final_patch) state <= DRAIN_LAYER;
                     else begin
                         if (patch_x == out_width-8'd1) begin patch_x <= 0; patch_y <= patch_y+8'd1; end
@@ -177,7 +178,7 @@ module dcim_layer_controller (
                         state <= START_PATCH;
                     end
                 end
-                DRAIN_LAYER: if (writer_done_seen || writer_done) begin done <= 1; state <= IDLE; end
+                DRAIN_LAYER: if ((writer_done_seen || writer_done) && postprocess_empty) begin done <= 1; state <= IDLE; end
                 FAULT: ; // No retry or local reset: owner resets the whole path.
                 default: begin error <= 1; state <= FAULT; end
             endcase

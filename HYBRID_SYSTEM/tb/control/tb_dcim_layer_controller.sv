@@ -16,6 +16,7 @@ module tb_dcim_layer_controller;
     logic dcim_activation_valid, dcim_activation_ready=0;
     logic dcim_patch_valid, dcim_patch_ready=0, dcim_patch_done=0, dcim_error=0;
     logic raw_path_enable, dcim_source_error;
+    wire postprocess_empty = !post_valid;
     logic [2:0] post_layer_id;
     logic post_relu_enable, post_valid=0, post_last=0, post_error=0, post_ready;
     logic [4:0] post_channel=0;
@@ -189,7 +190,10 @@ module tb_dcim_layer_controller;
         command(); while(!writer_cmd_valid) tick(1);
         if(phase>=1) start_writer();
         if(phase==2) begin dcim_patch_ready=1;tick(1);dcim_patch_ready=0; end
-        if(phase==3) begin start_patch();send_input(0);send_results(0,0); end
+        if(phase==3) begin
+            start_patch();send_input(0);send_results(0,0);
+            tick(1); // PoT becomes empty after the last output handshake.
+        end
         case(phase)
             0: if(dut.state!=dut.START_WRITER) $fatal(1,"V1 missed START_WRITER");
             1: if(dut.state!=dut.START_PATCH) $fatal(1,"V1 missed START_PATCH");
@@ -231,6 +235,7 @@ module tb_dcim_layer_controller;
             end
             2: begin
                 send_results(1,1);
+                tick(1); // Consume the newly asserted empty boundary.
                 if(dut.state!=dut.DRAIN_LAYER || !dut.writer_done_seen)
                     $fatal(1,"V2 Writer first done not saved in DRAIN");
             end
@@ -327,7 +332,10 @@ module tb_dcim_layer_controller;
                 reader_cmd_ready=1;tick(1);reader_cmd_ready=0;
             end
             if(phase>=5) send_input(0);
-            if(phase>=6) send_results(0,0);
+            if(phase>=6) begin
+                send_results(0,0);tick(1);
+                if(dut.state!=dut.DRAIN_LAYER) $fatal(1,"reset did not reach DRAIN_LAYER");
+            end
             reset_all();tick(5);
             if(done || busy || writer_cmd_valid || dcim_patch_valid || reader_cmd_valid)
                 $fatal(1,"stale transaction after reset");

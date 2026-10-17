@@ -27,6 +27,10 @@ module tb_kws_activation_path;
     logic [31:0] rng=32'h5052026;
     // S2 regression keeps every new PE/weight command disabled explicitly.
     kws_activation_path dut (
+        .clk_cim(clk),.rst_cim(rst),.weight_backend(1'b0),
+        .dcim_cmd_valid(1'b0),.dcim_cmd_ready(),.dcim_layer_id(3'd0),.dcim_relu_enable(1'b0),
+        .dcim_src_base(15'd0),.dcim_dst_base(15'd0),.dcim_width(8'd0),.dcim_height(8'd0),
+        .dcim_done(),.dcim_error(),.dcim_resident_valid(),
         .weight_load_valid(1'b0),.weight_load_ready(),.weight_layer_id(3'd0),
         .weight_k(8'd0),.weight_channels(6'd0),.weight_valid(1'b0),.weight_ready(),.weight_i8(8'sd0),
         .weight_load_done(),.weight_load_error(),.resident_valid(),

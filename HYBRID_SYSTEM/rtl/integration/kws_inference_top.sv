@@ -75,6 +75,11 @@ module kws_inference_top #(
         .path_busy(path_busy), .path_fault(path_fault)
     );
     kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED), .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) path (
+        // S4 scheduler remains PE/Pool-only until the full-sequence milestone.
+        .clk_cim(clk),.rst_cim(rst),.weight_backend(1'b0),
+        .dcim_cmd_valid(1'b0),.dcim_cmd_ready(),.dcim_layer_id(3'd0),.dcim_relu_enable(1'b0),
+        .dcim_src_base(15'd0),.dcim_dst_base(15'd0),.dcim_width(8'd0),.dcim_height(8'd0),
+        .dcim_done(),.dcim_error(),.dcim_resident_valid(),
         .clk(clk), .rst(rst),
         .load_valid(load_valid), .load_ready(load_ready), .load_mode(WRITE_LINEAR),
         .load_base(15'd0), .load_count(input_count), .load_width(8'd0), .load_height(8'd0), .load_channels(6'd0),
