@@ -2,6 +2,8 @@
 
 日期：2026-10-17。RTL已撰寫；全鏈驗證交Claude，未宣稱全鏈或實體驗證通過。
 
+更新：使用者回傳Claude對`3f78310`的審查，S5-D2 PIPE0/POST0、PIPE0/POST1及輸入reset恢復、S4四組回歸、正式DCIM_WEIGHT/RAW/COMMIT負測均通過；分類index=6、score=183，八筆讀取/輸出、FULL九操作及32040筆RAM比較正確。log在`scratchpad/s5d2/`與`build/inference_p0_post*/`。分類中reset在scratchpad亦通過，但當時未納入正式TB。作者未重跑上述長測試。本頁較早「尚未執行」指當時提交狀態；最新測試補強見[S5D2_TEST_COVERAGE.md](S5D2_TEST_COVERAGE.md)，新增案例尚待Claude執行。
+
 ## 架構與契約
 
 ```text

@@ -89,10 +89,21 @@ S5D_HALF_PS ?= 9434
 S5D_PHASE_PS ?= 2700
 S5D_MAX_CYCLES ?= 20000000
 S5D_EXTRA_ARGS ?=
+S5D_TAG ?= normal
+S5D_CASES ?= DELAY_READ_DONE DELAY_ARG_VALID RESET_CLASSIFY RESET_DCIM CLASS_SOURCE_ERROR CLASS_READ_ERROR
 S5D_DIR = $(BUILD_DIR)/inference_p$(S5D_PIPE)_post$(S5D_POST)
 S5D_EXE = $(S5D_DIR)/Vtb_kws_inference_top
 S5D_ARGS = +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$(S5D_SEED) +CIM_HALF_PS=$(S5D_HALF_PS) +PHASE_PS=$(S5D_PHASE_PS) +MAX_CYCLES=$(S5D_MAX_CYCLES) $(S5D_EXTRA_ARGS)
 .PHONY: build-inference-top test-inference-top test-inference-negative lint-inference-top
+.PHONY: test-inference-directed
+test-inference-directed: build-inference-top
+	@set -e; for scenario in $(S5D_CASES); do \
+	  case $$scenario in DELAY_READ_DONE|DELAY_ARG_VALID|RESET_CLASSIFY|RESET_DCIM|CLASS_SOURCE_ERROR|CLASS_READ_ERROR) ;; *) echo 'Unknown directed scenario'; exit 1;; esac; \
+	  log=$(S5D_DIR)/directed_$${scenario}_seed_$(S5D_SEED).log; \
+	  $(S5D_EXE) $(S5D_ARGS) +$$scenario > $$log 2>&1 || { tail -30 $$log; exit 1; }; \
+	  grep -q 'PASS S5D FULL' $$log; grep -q 'PASS S5D classification index=' $$log; \
+	  case $$scenario in DELAY_*) grep -q 'PASS S5D delayed terminal' $$log;; *) grep -q 'PASS S5D abort reset' $$log;; esac; \
+	  grep '^PASS S5D' $$log; done
 .PHONY: lint-inference-tests test-inference-class-negative
 lint-inference-tests:
 	@set -e; for top in tb_kws_inference_top tb_kws_s4_software; do \
@@ -103,7 +114,7 @@ lint-inference-top: lint-s4
 build-inference-top: generate-activation-path-vectors | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$(S5D_PIPE)" "-GPOSTPROCESS_PIPELINED=1'b$(S5D_POST)" --top-module tb_kws_inference_top -Mdir $(S5D_DIR) $(S4_RTL) tb/integration/tb_kws_inference_top.sv
 test-inference-top: build-inference-top
-	@log=$(S5D_DIR)/seed_$(S5D_SEED)_half_$(S5D_HALF_PS)_phase_$(S5D_PHASE_PS).log; \
+	@log=$(S5D_DIR)/$(S5D_TAG)_seed_$(S5D_SEED)_half_$(S5D_HALF_PS)_phase_$(S5D_PHASE_PS).log; \
 	$(S5D_EXE) $(S5D_ARGS) > $$log 2>&1; status=$$?; \
 	if [ $$status -ne 0 ]; then tail -40 $$log; exit $$status; fi; grep '^PASS S5D' $$log
 test-inference-negative: build-inference-top

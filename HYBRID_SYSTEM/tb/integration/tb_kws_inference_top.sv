@@ -60,6 +60,35 @@ module tb_kws_inference_top;
     integer counts[0:8]='{2016,21960,5400,4368,1008,576,144,32,8};
     integer bases[0:8]='{8064,10080,0,5400,0,1008,0,144,0};
     bit checking=0;
+    bit abort_enabled=0,abort_executed=0,terminal_test_done=0;
+    bit dcim_sample_seen=0;
+    always @(posedge clk_cim)
+        if(rst_cim) dcim_sample_seen<=0;
+        else if(dut.path.dcim_engine.chip_mode_sel && dut.path.dcim_engine.chip_output_en)
+            dcim_sample_seen<=1;
+    // Delay only a completion notification, never the data or FSM. Replay the
+    // suppressed pulse after twelve clocks to expose the dual-terminal contract.
+    initial begin
+        if($test$plusargs("DELAY_READ_DONE") || $test$plusargs("DELAY_ARG_VALID")) begin
+            wait(checking && dut.classify_active);
+            @(negedge clk);
+            if($test$plusargs("DELAY_READ_DONE")) force dut.path_read_done=1'b0;
+            else force dut.arg_valid=1'b0;
+            wait(class_beats==8);
+            repeat(12) begin
+                @(negedge clk);
+                if(done || class_valid || !busy || start_ready || read_ready)
+                    $fatal(1,"S5D missing terminal did not block completion");
+            end
+            if($test$plusargs("DELAY_READ_DONE")) force dut.path_read_done=1'b1;
+            else force dut.arg_valid=1'b1;
+            @(negedge clk);
+            if($test$plusargs("DELAY_READ_DONE")) release dut.path_read_done;
+            else release dut.arg_valid;
+            terminal_test_done=1;
+            $display("PASS S5D delayed terminal READ=%0d ARG=%0d",$test$plusargs("DELAY_READ_DONE"),$test$plusargs("DELAY_ARG_VALID"));
+        end
+    end
     function automatic bit random_ready;
         rng=rng^(rng<<13);rng=rng^(rng>>17);rng=rng^(rng<<5);
         return rng[0] || rng[3];
@@ -96,6 +125,8 @@ module tb_kws_inference_top;
         cycles++;
         if(cycles>max_cycles) $fatal(1,"S5D watchdog op=%0d",current_op);
         if(!rst && checking) begin
+            if(done && (dut.path_busy || !dut.path.postprocess_empty))
+                $fatal(1,"S5D done before path idle");
             if(error || dut.path_fault) $fatal(1,"S5D unexpected error code=%0d",error_code);
             if(dut.controller_busy && (read_ready || start_ready)) $fatal(1,"S5D ownership leaked");
             if(dut.load_valid && dut.load_ready) begin phase=-2;writes=0;end
@@ -221,12 +252,53 @@ module tb_kws_inference_top;
         if(n!=32768 || read_error) $fatal(1,"S5D incomplete RAM scan");
         read_out_ready=0;
     endtask
+    task automatic abort_and_reset;
+        checking=0;read_valid=0;
+        if($test$plusargs("CLASS_SOURCE_ERROR") || $test$plusargs("CLASS_READ_ERROR")) begin
+            if($test$plusargs("CLASS_SOURCE_ERROR")) source_error=1;
+            else force dut.path_read_error=1'b1;
+            while(!error) @(negedge clk);
+            if(done || class_valid || error_code!=($test$plusargs("CLASS_SOURCE_ERROR") ? LERR_SOURCE : LERR_OPERATION))
+                $fatal(1,"S5D classification fault code/status");
+            source_error=0;
+            if($test$plusargs("CLASS_READ_ERROR")) release dut.path_read_error;
+            repeat(5) begin
+                @(negedge clk);
+                if(done || class_valid || start_ready || read_ready || !busy)
+                    $fatal(1,"S5D classification fault not locked");
+            end
+        end
+        reset_request=1;
+        repeat(5) @(negedge clk);
+        reset_request=0;wait(!rst && !rst_cim);
+        repeat(10) begin
+            @(negedge clk);
+            if(done || class_valid || error || busy || dut.path.w_en || dut.path.r_en ||
+               dut.arg_seen || dut.read_seen || dut.classifier.sample_count!=0)
+                $fatal(1,"S5D abort reset residue");
+        end
+        // RAM is NOT cleared by reset; mark reference bytes unknown until the
+        // restarted FULL overwrites them, rather than assuming zero contents.
+        for(integer n=0;n<32768;n++) initialized[n]=0;
+        phase=-1;next_op=0;reads=0;writes=0;input_requests=0;weight_requests=0;
+        class_reads=0;class_beats=0;
+        abort_executed=1;
+        $display("PASS S5D abort reset CLASS=%0d DCIM=%0d SOURCE_ERROR=%0d READ_ERROR=%0d; restarting FULL",
+            $test$plusargs("RESET_CLASSIFY"),$test$plusargs("RESET_DCIM"),
+            $test$plusargs("CLASS_SOURCE_ERROR"),$test$plusargs("CLASS_READ_ERROR"));
+    endtask
     initial begin
         if(!$value$plusargs("VECTORS=%s",vectors)) $fatal(1,"Missing vectors");
         if($value$plusargs("MAX_CYCLES=%d",max_cycles)) begin end
         if(max_cycles<=0) $fatal(1,"Invalid MAX_CYCLES");
         if($value$plusargs("SEED=%d",seed_arg)) rng=32'(seed_arg);
         if(rng==0) $fatal(1,"Nonzero seed required");
+        abort_enabled=$test$plusargs("RESET_CLASSIFY") || $test$plusargs("RESET_DCIM") ||
+                      $test$plusargs("CLASS_SOURCE_ERROR") || $test$plusargs("CLASS_READ_ERROR");
+        if(int'($test$plusargs("RESET_CLASSIFY"))+int'($test$plusargs("RESET_DCIM"))+
+           int'($test$plusargs("CLASS_SOURCE_ERROR"))+int'($test$plusargs("CLASS_READ_ERROR"))+
+           int'($test$plusargs("DELAY_READ_DONE"))+int'($test$plusargs("DELAY_ARG_VALID"))>1)
+            $fatal(1,"Select only one directed injection per run");
         for(integer n=0;n<32768;n++) initialized[n]=0;
         $readmemh({vectors,"/quant_input.mem"},quant_input);
         $readmemh({vectors,"/pool1.mem"},pool1);$readmemh({vectors,"/relu1.mem"},relu1);
@@ -259,15 +331,28 @@ module tb_kws_inference_top;
             end
             $display("PASS S5D reset during FULL input load; restarting real FULL");
         end
-        checking=1;start_valid=1;read_valid=1;
+        for(integer attempt=0;attempt<(abort_enabled ? 2 : 1);attempt++) begin
+        checking=1;start_valid=1;read_valid=1;run_mode=RUN_FULL;
         #1;if(!start_ready || read_ready) $fatal(1,"S5D start priority");
         @(negedge clk);start_valid=0;run_mode=RUN_FC_TAIL; // Saved FULL must survive.
         while(!done) begin
             if(input_request_valid) supply_input();
             else if(weight_request_valid) supply_weights();
-            else @(negedge clk);
+            else begin
+                @(negedge clk);
+                if(abort_enabled && !abort_executed &&
+                   (($test$plusargs("RESET_DCIM") && phase==3 && dcim_sample_seen) ||
+                    (!$test$plusargs("RESET_DCIM") && dut.classify_active && class_beats==3))) begin
+                    abort_and_reset();
+                    break;
+                end
+            end
+        end
         end
         read_valid=0;checking=0;
+        if(abort_enabled && !abort_executed) $fatal(1,"S5D abort coverage missing");
+        if(($test$plusargs("DELAY_READ_DONE") || $test$plusargs("DELAY_ARG_VALID")) && !terminal_test_done)
+            $fatal(1,"S5D terminal injection missing");
         if(next_op!=9 || input_requests!=1 || weight_requests!=5 || busy || error)
             $fatal(1,"S5D completion coverage");
         for(integer n=1;n<8;n++) if(fc2[n]>fc2[best]) best=n;

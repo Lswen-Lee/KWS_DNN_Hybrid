@@ -165,7 +165,7 @@ module tb_kws_shared_postprocess;
             end
         end
         reset_all();
-        $display("PASS residue cases=18 POST=%0d",POSTPROCESS_PIPELINED);
+        $display("PASS residue cases=18 POST=%0d DCIM_WEIGHT=%0d",POSTPROCESS_PIPELINED,$test$plusargs("DCIM_WEIGHT"));
     endtask
     // source=0: sentinel; 1: software Pool2; 2: software FC input.
     task automatic host_load(input integer base,count,source);

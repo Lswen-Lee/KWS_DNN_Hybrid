@@ -1,5 +1,7 @@
 # Claude驗證任務：S5-D2分類整合
 
+2026-10-17更新：本頁原始矩陣已由Claude回報通過。最新任務請優先依[S5D2_TEST_COVERAGE.md](S5D2_TEST_COVERAGE.md)執行新增六案例及雙完成條件突變驗證；不必無差別重跑本頁全部歷史矩陣。
+
 先讀AGENTS.md、SINGLE_BUFFER_ARCHITECTURE.md最新段落、S5D2_ARGMAX.md，再核對提交diff及其中的RTL/TB。記錄HEAD及原有dirty修改；不修改正式RTL，不重跑未變更的所有歷史單測。
 
 ## 必查設計
