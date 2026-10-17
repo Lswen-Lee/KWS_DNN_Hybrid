@@ -1,6 +1,8 @@
 # S5-D1：全段 PE／DCIM 自動排程
 
-日期：2026-10-17。狀態：RTL與TB已撰寫；完整功能模擬交Claude執行，尚未驗收。
+日期：2026-10-17。S5-D1在提交5f35849已由Claude獨立功能驗證通過（使用者回傳報告）；本頁下文保留當時架構與作者檢查紀錄。最新S5-D2的分類與done語意見[S5D2_ARGMAX.md](S5D2_ARGMAX.md)，不可將舊PASS直接套用到新RTL。
+
+Claude回報：lint、controller/ROM、shared全層、S4回歸及負測全部通過；FULL的PIPE/POST=00、01、10、11各通過九操作、五次權重要求、32040筆有效RAM比較，另通過CIM half/phase=10000/1300ps。標準9434/2700ps配置各run總cycles為4858406、4865443、4860233、4867279；含TB初始化、來源停頓及最後RAM掃描，並非純推論延遲。逐層讀寫數與本頁表格一致。log來源：`HYBRID_SYSTEM/scratchpad/s5d1/<編號>.log`及`build/inference_p<PIPE>_post<POST>/`，本次作者未重跑上述長測試。Claude的錯誤done mux、錯誤weight_backend突變均被抓到。尚無Vivado／STA／板測證據。
 本文件取代早期S4「FULL拒絕」的現行規格；舊文件保留為歷史紀錄。
 
 ## 1. 範圍與完成定義

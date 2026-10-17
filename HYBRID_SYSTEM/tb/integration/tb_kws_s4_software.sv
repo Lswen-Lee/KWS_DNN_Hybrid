@@ -8,6 +8,10 @@ module tb_kws_s4_software;
     logic clk=0,rst=1;
     always #5 clk=~clk;
     logic start_valid=0,start_ready,busy,done,error,op_done;
+    logic class_valid;
+    logic [2:0] class_index;
+    logic [7:0] class_score;
+    integer class_reads=0;
     inference_mode_t run_mode=RUN_FRONTEND;
     layer_error_t error_code;
     logic [3:0] current_op;
@@ -77,7 +81,11 @@ module tb_kws_s4_software;
                         default: $fatal(1,"Unsupported command executed");
                     endcase
                 end
-                if(dut.path.r_en) begin
+                if(dut.path.r_en && dut.classify_active) begin
+                    if(!flatten_run || class_reads>=8 || int'(dut.path.r_addr)!=class_reads)
+                        $fatal(1,"S4 classification read address");
+                    class_reads++;
+                end else if(dut.path.r_en) begin
                     if(phase<0 || reads>=expected_reads || int'(dut.path.r_addr)!=expected_read_address(reads))
                         $fatal(1,"Read address/order phase=%0d n=%0d",phase,reads);
                     reads++;
@@ -167,8 +175,9 @@ module tb_kws_s4_software;
         weight_valid=0;expected_weight_id=id+1;
     endtask
     task automatic run_segment(input bit fc);
+        integer best;
         flatten_run=fc;next_op=fc ? 7 : 0;expected_weight_id=fc ? 3 : 0;
-        requests_this_run=0;phase=-1;checking=1;
+        requests_this_run=0;phase=-1;checking=1;class_reads=0;
         @(negedge clk);run_mode=fc ? RUN_FC_TAIL : RUN_FRONTEND;start_valid=1;read_valid=1;
         #1;if(!start_ready || read_ready) $fatal(1,"Start/read priority");
         @(negedge clk);start_valid=0;run_mode=RUN_FULL;
@@ -182,6 +191,10 @@ module tb_kws_s4_software;
         read_valid=0;checking=0;
         if(error || busy || next_op!=(fc ? 9 : 3) || requests_this_run!=1)
             $fatal(1,"Wrong segment completion");
+        best=0;
+        for(integer i=1;i<8;i++) if(fc2[i]>fc2[best]) best=i;
+        if(class_valid!=fc || class_reads!=(fc ? 8 : 0)) $fatal(1,"S4 classification validity");
+        if(fc && (int'(class_index)!=best || class_score!==fc2[best])) $fatal(1,"S4 classification mismatch");
         runs++;@(negedge clk);
         if(done) $fatal(1,"Done pulse too long");
     endtask

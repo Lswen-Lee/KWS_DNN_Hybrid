@@ -22,6 +22,11 @@ module tb_kws_inference_top;
         if(reset_request) cr<=3; else cr<={cr[0],1'b0};
     wire rst=sr[1],rst_cim=cr[1];
     logic start_valid=0,start_ready,busy,done,error,op_done;
+    logic class_valid;
+    logic [2:0] class_index;
+    logic [7:0] class_score;
+    integer class_reads=0,class_beats=0,best=0;
+    integer max_cycles=20000000;
     inference_mode_t run_mode=RUN_FULL;
     layer_error_t error_code;
     logic [3:0] current_op;
@@ -89,7 +94,7 @@ module tb_kws_inference_top;
         integer idx,address;
         logic [7:0] expected;
         cycles++;
-        if(cycles>20000000) $fatal(1,"S5D watchdog op=%0d",current_op);
+        if(cycles>max_cycles) $fatal(1,"S5D watchdog op=%0d",current_op);
         if(!rst && checking) begin
             if(error || dut.path_fault) $fatal(1,"S5D unexpected error code=%0d",error_code);
             if(dut.controller_busy && (read_ready || start_ready)) $fatal(1,"S5D ownership leaked");
@@ -106,7 +111,18 @@ module tb_kws_inference_top;
             if(dut.path.raw_ready && dut.path.d_raw_ready) $fatal(1,"S5D simultaneous raw ready");
             if(dut.path.raw_ready && (phase==3 || phase==5)) $fatal(1,"S5D non-owner PE ready");
             if(dut.path.d_raw_ready && !(phase==3 || phase==5)) $fatal(1,"S5D non-owner DCIM ready");
-            if(dut.path.r_en) begin
+            if(dut.classify_active && (read_ready || read_out_valid || read_done || read_error))
+                $fatal(1,"S5D classification leaked to host");
+            if(dut.classify_active && dut.path_read_valid) begin
+                if(class_beats>=8 || dut.path_read_data!==fc2[class_beats] || dut.path_read_last!=(class_beats==7))
+                    $fatal(1,"S5D classification stream mismatch");
+                class_beats++;
+            end
+            if(dut.path.r_en && dut.classify_active) begin
+                if(next_op!=9 || class_reads>=8 || int'(dut.path.r_addr)!=class_reads)
+                    $fatal(1,"S5D classification read mismatch");
+                class_reads++;
+            end else if(dut.path.r_en) begin
                 if(phase<0 || phase>8) $fatal(1,"S5D unscheduled read");
                 address=read_address(phase,reads);
                 if(reads>=read_totals[phase] || int'(dut.path.r_addr)!=address || !initialized[address])
@@ -207,6 +223,8 @@ module tb_kws_inference_top;
     endtask
     initial begin
         if(!$value$plusargs("VECTORS=%s",vectors)) $fatal(1,"Missing vectors");
+        if($value$plusargs("MAX_CYCLES=%d",max_cycles)) begin end
+        if(max_cycles<=0) $fatal(1,"Invalid MAX_CYCLES");
         if($value$plusargs("SEED=%d",seed_arg)) rng=32'(seed_arg);
         if(rng==0) $fatal(1,"Nonzero seed required");
         for(integer n=0;n<32768;n++) initialized[n]=0;
@@ -222,6 +240,25 @@ module tb_kws_inference_top;
         if($test$plusargs("CORRUPT_GOLDEN")) relu2[0]^=8'd1;
         repeat(5) @(negedge clk);reset_request=0;
         wait(!rst && !rst_cim);repeat(4) @(negedge clk);
+        // Optional real FULL input-load abort; no forced FSM or fabricated result.
+        if($test$plusargs("RESET_BEFORE_FULL")) begin
+            start_valid=1;@(negedge clk);start_valid=0;
+            while(!input_request_valid) @(negedge clk);
+            input_request_ready=1;@(negedge clk);input_request_ready=0;
+            for(integer n=0;n<16;n++) begin
+                input_valid=1;input_data=quant_input[n];
+                do @(posedge clk);while(!input_ready);@(negedge clk);
+            end
+            input_valid=0;reset_request=1;
+            repeat(5) @(negedge clk);reset_request=0;
+            wait(!rst && !rst_cim);
+            repeat(10) begin
+                @(negedge clk);
+                if(done || class_valid || error || busy || dut.path.w_en || dut.path.r_en)
+                    $fatal(1,"S5D reset residue");
+            end
+            $display("PASS S5D reset during FULL input load; restarting real FULL");
+        end
         checking=1;start_valid=1;read_valid=1;
         #1;if(!start_ready || read_ready) $fatal(1,"S5D start priority");
         @(negedge clk);start_valid=0;run_mode=RUN_FC_TAIL; // Saved FULL must survive.
@@ -233,6 +270,11 @@ module tb_kws_inference_top;
         read_valid=0;checking=0;
         if(next_op!=9 || input_requests!=1 || weight_requests!=5 || busy || error)
             $fatal(1,"S5D completion coverage");
+        for(integer n=1;n<8;n++) if(fc2[n]>fc2[best]) best=n;
+        if($test$plusargs("CORRUPT_CLASS")) best=(best+1)%8;
+        if(!class_valid || int'(class_index)!=best || class_score!==fc2[best] || class_reads!=8 || class_beats!=8)
+            $fatal(1,"S5D classification mismatch");
+        $display("PASS S5D classification index=%0d score=%0d reads=%0d beats=%0d",class_index,class_score,class_reads,class_beats);
         @(negedge clk);if(done) $fatal(1,"S5D done not pulse");
         scan_ram();
         if(read_checks!=32040 || read_stalls==0) $fatal(1,"S5D RAM coverage");

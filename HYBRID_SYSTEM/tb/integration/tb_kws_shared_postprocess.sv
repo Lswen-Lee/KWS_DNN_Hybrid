@@ -135,7 +135,8 @@ module tb_kws_shared_postprocess;
                     1: force dut.d_raw_valid=1'b1;
                     2: force dut.postprocess_empty=1'b0;
                 endcase
-                weight_backend=0;
+                weight_backend=$test$plusargs("DCIM_WEIGHT");
+                if(weight_backend) begin weight_layer_id=1;weight_k=108;weight_channels=12;end
                 case(command_id)
                     0: weight_load_valid=1;
                     1: pe_cmd_valid=1;
@@ -148,6 +149,7 @@ module tb_kws_shared_postprocess;
                 if(weight_load_ready || pe_cmd_ready || dcim_cmd_ready || pool_ready || load_ready || read_ready ||
                    dut.raw_ready || dut.d_raw_ready || dut.w_en || dut.r_en ||
                    dut.pe_engine.load_valid || dut.pe_controller.cmd_valid || dut.dcim_controller.cmd_valid ||
+                   dut.dcim_engine.load_valid || dut.dcim_engine.weight_valid ||
                    dut.controller.cmd_valid || dut.writer.cmd_valid || dut.reader.cmd_valid)
                     $fatal(1,"residue accepted command source=%0d command=%0d",source_id,command_id);
                 @(negedge clk);

@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
-// S5-D1 internal streaming top, not a physical FPGA pin top.
-// FULL completes after FC2 commits eight UINT8 results, not after Argmax.
+// S5-D2 internal streaming top, not a physical FPGA pin top.
+// FULL/FC_TAIL complete after RAM[0..7] is consumed and Argmax is valid.
 // Both domains require a common reset event and locally synchronous release.
 module kws_inference_top #(
     parameter bit RESULT_PIPELINED = 1'b0,
@@ -12,6 +12,9 @@ module kws_inference_top #(
     output logic start_ready,
     input kws_system_pkg::inference_mode_t run_mode,
     output logic busy, done, error,
+    output logic class_valid,
+    output logic [2:0] class_index,
+    output logic [7:0] class_score,
     output kws_system_pkg::layer_error_t error_code,
     output logic [3:0] current_op,
     output logic op_done,
@@ -51,6 +54,38 @@ module kws_inference_top #(
     logic pool_valid, pool_ready, pool_done, pool_error;
     logic input_enable, weight_enable, path_input_ready, path_weight_ready;
     logic host_read_valid, host_read_ready;
+    logic classify_valid, classify_active, classify_done;
+    logic path_read_valid, path_read_last, path_read_done, path_read_error;
+    logic [7:0] path_read_data;
+    logic arg_valid, arg_seen, read_seen, classification_required;
+    wire classify_fire = classify_valid && host_read_ready;
+    wire start_fire = start_valid && start_ready;
+    assign classify_done = (read_seen || path_read_done) && (arg_seen || arg_valid);
+    assign class_valid = done && classification_required && !rst;
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            arg_seen <= 0; read_seen <= 0; classification_required <= 0;
+        end else begin
+            if (start_fire) classification_required <= run_mode == RUN_FULL || run_mode == RUN_FC_TAIL;
+            if (start_fire || classify_fire) begin arg_seen <= 0; read_seen <= 0; end
+            else if (classify_active) begin
+                if (arg_valid) arg_seen <= 1;
+                if (path_read_done) read_seen <= 1;
+            end
+        end
+    end
+    argmax_8 classifier (
+        .clk(clk), .rst(rst), .clear(start_fire || classify_fire),
+        .in_valid(classify_active && path_read_valid && !source_error && !path_fault),
+        .input_uint8(path_read_data), .out_valid(arg_valid),
+        .class_index(class_index), .maximum_value(class_score)
+    );
+    // Internal classification owns the public Reader port until both terminals.
+    assign read_out_valid = path_read_valid && !controller_busy;
+    assign read_data = path_read_data;
+    assign read_last = path_read_last;
+    assign read_done = path_read_done && !controller_busy;
+    assign read_error = path_read_error && !controller_busy;
     assign start_ready = controller_ready;
     assign busy = controller_busy || path_busy;
     assign host_read_valid = read_valid && !controller_busy && !start_valid && !rst;
@@ -76,6 +111,8 @@ module kws_inference_top #(
         .pe_cmd_valid(pe_cmd_valid), .pe_cmd_ready(pe_cmd_ready), .pe_done(pe_done), .pe_error(pe_error),
         .dcim_cmd_valid(dcim_cmd_valid), .dcim_cmd_ready(dcim_cmd_ready), .dcim_done(dcim_done), .dcim_error(dcim_error),
         .pool_valid(pool_valid), .pool_ready(pool_ready), .pool_done(pool_done), .pool_error(pool_error),
+        .classify_valid(classify_valid), .classify_active(classify_active),
+        .classify_ready(host_read_ready), .classify_done(classify_done), .classify_error(path_read_error),
         .path_busy(path_busy), .path_fault(path_fault)
     );
     kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED), .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) path (
@@ -91,9 +128,10 @@ module kws_inference_top #(
         .load_data_valid(input_enable && input_valid), .load_data_ready(path_input_ready),
         .load_data(input_data), .load_x(8'd0), .load_y(8'd0), .load_channel(6'd0),
         .load_done(load_done), .load_error(load_error),
-        .read_valid(host_read_valid), .read_ready(host_read_ready), .read_base(read_base), .read_count(read_count),
-        .read_out_valid(read_out_valid), .read_out_ready(read_out_ready), .read_data(read_data),
-        .read_last(read_last), .read_done(read_done), .read_error(read_error),
+        .read_valid(classify_valid || host_read_valid), .read_ready(host_read_ready),
+        .read_base(classify_active ? 15'd0 : read_base), .read_count(classify_active ? 16'd8 : read_count),
+        .read_out_valid(path_read_valid), .read_out_ready(classify_active ? 1'b1 : read_out_ready),
+        .read_data(path_read_data), .read_last(path_read_last), .read_done(path_read_done), .read_error(path_read_error),
         .pool_valid(pool_valid), .pool_ready(pool_ready), .pool_src_base(cfg.src_base), .pool_dst_base(cfg.dst_base),
         .pool_width(cfg.input_width), .pool_height(cfg.input_height), .pool_channels(cfg.input_channels),
         .pool_done(pool_done), .pool_error(pool_error), .fault(path_fault), .busy(path_busy),

@@ -20,6 +20,7 @@ module tb_layer_controller;
     logic dcim_cmd_valid,dcim_cmd_ready=0,dcim_done=0,dcim_error=0;
     logic pool_valid,pool_ready=0,pool_done=0,pool_error=0;
     logic path_busy=0,path_fault=0;
+    logic classify_valid,classify_active,classify_ready=0,classify_done=0,classify_error=0;
     integer cycles=0,successes=0,failures=0,operations=0;
     layer_controller dut (.*);
     always @(posedge clk) begin
@@ -28,7 +29,7 @@ module tb_layer_controller;
         if(!rst) begin
             if(done && error) $fatal(1,"Two terminal statuses");
             if(busy && start_ready) $fatal(1,"Start ready while busy");
-            if(int'(load_valid)+int'(weight_load_valid)+int'(pe_cmd_valid)+int'(pool_valid)+int'(dcim_cmd_valid)>1)
+            if(int'(load_valid)+int'(weight_load_valid)+int'(pe_cmd_valid)+int'(pool_valid)+int'(dcim_cmd_valid)+int'(classify_valid)>1)
                 $fatal(1,"Multiple path commands");
             if(op_done) operations++;
         end
@@ -39,6 +40,7 @@ module tb_layer_controller;
         load_ready=0;load_done=0;load_error=0;weight_load_ready=0;weight_load_done=0;weight_load_error=0;
         pe_cmd_ready=0;pe_done=0;pe_error=0;pool_ready=0;pool_done=0;pool_error=0;path_busy=0;path_fault=0;
         dcim_cmd_ready=0;dcim_done=0;dcim_error=0;
+        classify_ready=0;classify_done=0;classify_error=0;
         repeat(2) @(negedge clk);rst=0;@(negedge clk);
         if(!start_ready || busy || error_code!=LERR_NONE) $fatal(1,"Reset failed");
     endtask
@@ -130,11 +132,24 @@ module tb_layer_controller;
         if(error_code!=expected || done || !busy) $fatal(1,"Wrong failure code");
         @(negedge clk);
         repeat(4) begin
-            if(error || start_ready || load_valid || weight_load_valid || pe_cmd_valid || pool_valid || dcim_cmd_valid ||
+            if(error || start_ready || load_valid || weight_load_valid || pe_cmd_valid || pool_valid || dcim_cmd_valid || classify_valid ||
                input_stream_enable || weight_stream_enable) $fatal(1,"Failure did not lock/pulse");
             @(negedge clk);
         end
         failures++;
+    endtask
+    task automatic classify;
+        while(!classify_valid) @(negedge clk);
+        repeat(4) begin
+            @(negedge clk);
+            if(!classify_valid || !classify_active || done || !busy) $fatal(1,"Classification request hold");
+        end
+        classify_ready=1;@(negedge clk);classify_ready=0;
+        repeat(5) begin
+            @(negedge clk);
+            if(done || !busy || !classify_active) $fatal(1,"Classification completed early");
+        end
+        classify_done=1;@(negedge clk);classify_done=0;
     endtask
     initial begin
         reset_all();path_busy=1;#1;if(start_ready) $fatal(1,"Busy path accepted start");path_busy=0;
@@ -142,11 +157,13 @@ module tb_layer_controller;
         while(!done) @(negedge clk);if(busy) $fatal(1,"Done still busy");successes++;
         @(negedge clk);if(done) $fatal(1,"Done not pulse");
         launch(RUN_FC_TAIL);input_stage();weights();operation(0,7);weights();operation(0,8);
+        classify();
         while(!done) @(negedge clk);successes++;
         reset_all();launch(RUN_FULL);input_stage();
         operation(1,0);weights();operation(0,1);operation(1,2);
         weights();operation(2,3);operation(1,4);weights();operation(2,5);
         operation(1,6);weights();operation(0,7);weights();operation(0,8);
+        classify();
         while(!done) @(negedge clk);successes++;
         reset_all();launch(inference_mode_t'(3));check_failure(LERR_MODE);
         reset_all();launch(RUN_FRONTEND);accept_command(0);source_error=1;check_failure(LERR_SOURCE);
@@ -161,6 +178,10 @@ module tb_layer_controller;
         reset_all();launch(RUN_FULL);input_stage();
         operation(1,0);weights();operation(0,1);operation(1,2);weights();accept_command(6);
         dcim_error=1;dcim_done=1;check_failure(LERR_OPERATION);
+        reset_all();launch(RUN_FC_TAIL);input_stage();weights();operation(0,7);weights();operation(0,8);
+        while(!classify_valid) @(negedge clk);
+        classify_ready=1;@(negedge clk);classify_ready=0;
+        classify_error=1;classify_done=1;check_failure(LERR_OPERATION);
         reset_all();launch(RUN_FRONTEND);accept_command(0);path_fault=1;check_failure(LERR_PATH);
         // Descriptor corruption is fault injection only, never a numeric bypass.
         reset_all();launch(RUN_FRONTEND);
@@ -168,7 +189,7 @@ module tb_layer_controller;
         input_stage();check_failure(LERR_DESCRIPTOR);release dut.rom_valid;
         // Reset cancels an outstanding input stream; no stale done may survive.
         reset_all();launch(RUN_FRONTEND);accept_command(0);accept_command(1);reset_all();
-        if(operations!=17 || successes!=3 || failures!=9) $fatal(1,"Unit coverage missing");
+        if(operations!=19 || successes!=3 || failures!=10) $fatal(1,"Unit coverage missing");
         $display("PASS layer_controller successes=%0d operations=%0d failures=%0d",successes,operations,failures);
         $finish;
     end

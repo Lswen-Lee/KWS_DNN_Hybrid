@@ -42,6 +42,8 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 
 ## 2. 已有模組及重用邊界
 
+2026-10-17最新S5-D2：使用者提供Claude審查，5f35849全鏈四PIPE/POST組合與第二時脈配置通過；據此加入Argmax整合。沿用Reader讀RAM[0..7]及argmax_8，layer_controller增加CLASSIFY_REQUEST/CLASSIFY_WAIT（共17狀態），FULL/FC_TAIL的done延後至讀取與分類均完成，FRONTEND不分類。新增class_valid/index/score；不改argmax RTL、RAM或PoT。正式補DCIM_WEIGHT殘留案例、可設定watchdog與FULL輸入期間共同reset後重跑TB。S5-D2功能驗證待執行，不沿用S5-D1 PASS；詳[S5D2設計及Claude指令](S5D2_ARGMAX.md)。本條優先於文件較早「Argmax未整合」等歷史描述。
+
 2026-10-17 S5-D1：沿用15-state `layer_controller`，增加DCIM操作端點與RUN_FULL(0..8)；`kws_inference_top`新增clk_cim/rst_cim並連接既有共享path，權重backend來自保存的descriptor。不新增PoT、RAM、運算核心、AXI或Argmax。新增真實全鏈TB，舊S4 TB只將非法模式案例從FULL改成保留值3並補clock連線。詳細執行狀態見S5D1文件；本階段完整模擬交Claude執行。
 
 2026-10-16第二批（功能模擬通過）：`kws_activation_path`新增DCIM_RUN、獨立resident與權重目的選擇，共用原Reader/Writer/RAM與唯一PoT；DCIM controller新增empty輸入。兩種PoT各通過四次PE/DCIM切換、完整Conv2→Pool3→Conv3→Pool4與131072筆RAM讀回，既有回歸完成。Claude另回報scratchpad回歸含獨立DCIM整層測試通過。2026-10-17追加審查修正：Idle raw殘留同時阻擋握手並FAULT、DCIM count接0、非法權重請求使resident失效的契約寫明；僅執行定向補測，結果見[第二步](SHARED_POSTPROCESS_STEP2.md)、[Claude審查](SHARED_POSTPROCESS_STEP2_CLAUDE_PROMPT.md)。S4 scheduler仍未接DCIM，FULL仍拒絕。下列較早「尚未接共享path」為歷史進度，應以本條最新狀態為準；Vivado／實體CDC／板測仍未驗證。

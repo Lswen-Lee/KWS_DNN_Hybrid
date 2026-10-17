@@ -61,6 +61,8 @@ test-shared-review: generate-activation-path-vectors | $(BUILD_DIR)
 	  exe=$(BUILD_DIR)/shared_post_$$post/Vtb_kws_shared_postprocess; \
 	  $$exe +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +REVIEW_ONLY > $(BUILD_DIR)/shared_post_$$post/review.log 2>&1; \
 	  grep '^PASS' $(BUILD_DIR)/shared_post_$$post/review.log; \
+	  $$exe +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +REVIEW_ONLY +DCIM_WEIGHT > $(BUILD_DIR)/shared_post_$$post/review_dcim_weight.log 2>&1; \
+	  grep '^PASS' $(BUILD_DIR)/shared_post_$$post/review_dcim_weight.log; \
 	  for kind in RAW COMMIT; do \
 	    log=$(BUILD_DIR)/shared_post_$$post/negative_$$kind.log; \
 	    if $$exe +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +REVIEW_ONLY +CORRUPT_$$kind > $$log 2>&1; then echo "FAIL $$kind corruption accepted"; exit 1; fi; \
@@ -78,17 +80,25 @@ test-shared-postprocess: generate-activation-path-vectors | $(BUILD_DIR)
 SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
 SOFTWARE_WEIGHT_DIR ?= ../../layer_weights_int8_pot_ceil_zp128
 S4_CONTROL_RTL := rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv
-S4_RTL = $(ACTIVATION_PATH_RTL) rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv rtl/integration/kws_inference_top.sv
+S4_RTL = $(ACTIVATION_PATH_RTL) rtl/datapath/argmax_8.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv rtl/integration/kws_inference_top.sv
 # S5-D1 uses the same RTL list; no separate copy of the engines or PoT.
 S5D_PIPE ?= 0
 S5D_POST ?= 0
 S5D_SEED ?= 505
 S5D_HALF_PS ?= 9434
 S5D_PHASE_PS ?= 2700
+S5D_MAX_CYCLES ?= 20000000
+S5D_EXTRA_ARGS ?=
 S5D_DIR = $(BUILD_DIR)/inference_p$(S5D_PIPE)_post$(S5D_POST)
 S5D_EXE = $(S5D_DIR)/Vtb_kws_inference_top
-S5D_ARGS = +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$(S5D_SEED) +CIM_HALF_PS=$(S5D_HALF_PS) +PHASE_PS=$(S5D_PHASE_PS)
+S5D_ARGS = +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$(S5D_SEED) +CIM_HALF_PS=$(S5D_HALF_PS) +PHASE_PS=$(S5D_PHASE_PS) +MAX_CYCLES=$(S5D_MAX_CYCLES) $(S5D_EXTRA_ARGS)
 .PHONY: build-inference-top test-inference-top test-inference-negative lint-inference-top
+.PHONY: lint-inference-tests test-inference-class-negative
+lint-inference-tests:
+	@set -e; for top in tb_kws_inference_top tb_kws_s4_software; do \
+	$(VERILATOR) --lint-only --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module $$top $(S4_RTL) tb/integration/$$top.sv; done
+test-inference-class-negative: build-inference-top
+	@ulimit -c 0; if $(S5D_EXE) $(S5D_ARGS) +CORRUPT_CLASS > $(S5D_DIR)/negative_class.log 2>&1; then echo 'FAIL corrupted class expectation accepted'; exit 1; else grep -q 'S5D classification mismatch' $(S5D_DIR)/negative_class.log && echo 'PASS S5D expected classification rejection'; fi
 lint-inference-top: lint-s4
 build-inference-top: generate-activation-path-vectors | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$(S5D_PIPE)" "-GPOSTPROCESS_PIPELINED=1'b$(S5D_POST)" --top-module tb_kws_inference_top -Mdir $(S5D_DIR) $(S4_RTL) tb/integration/tb_kws_inference_top.sv

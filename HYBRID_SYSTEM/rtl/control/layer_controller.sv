@@ -30,13 +30,16 @@ module layer_controller (
     input logic dcim_cmd_ready, dcim_done, dcim_error,
     output logic pool_valid,
     input logic pool_ready, pool_done, pool_error,
+    output logic classify_valid, classify_active,
+    input logic classify_ready, classify_done, classify_error,
     input logic path_busy, path_fault
 );
     import kws_system_pkg::*;
-    typedef enum logic [3:0] {
+    typedef enum logic [4:0] {
         IDLE, CHECK_RUN, REQUEST_INPUT, ISSUE_INPUT_LOAD, WAIT_INPUT,
         FETCH_DESC, CHECK_DESC, REQUEST_WEIGHT, ISSUE_WEIGHT_LOAD, WAIT_WEIGHT,
-        ISSUE_OPERATION, WAIT_OPERATION, ADVANCE, COMPLETE, FAILED
+        ISSUE_OPERATION, WAIT_OPERATION, ADVANCE, COMPLETE, FAILED,
+        CLASSIFY_REQUEST, CLASSIFY_WAIT
     } state_t;
     state_t state;
     inference_mode_t mode_q;
@@ -62,6 +65,8 @@ module layer_controller (
     assign pe_cmd_valid = enabled && state == ISSUE_OPERATION && active_descriptor.backend == BACKEND_PE;
     assign dcim_cmd_valid = enabled && state == ISSUE_OPERATION && active_descriptor.backend == BACKEND_DCIM;
     assign pool_valid = enabled && state == ISSUE_OPERATION && active_descriptor.backend == BACKEND_POOL;
+    assign classify_valid = enabled && state == CLASSIFY_REQUEST;
+    assign classify_active = state == CLASSIFY_REQUEST || state == CLASSIFY_WAIT;
     // Never alias an unknown backend to PE. Descriptor validation rejects it.
     always_comb begin
         operation_error = 1'b0;
@@ -139,8 +144,15 @@ module layer_controller (
                             op_done <= 1; state <= ADVANCE;
                         end
                     end
-                    ADVANCE: if (current_op == last_op) state <= COMPLETE;
+                    ADVANCE: if (current_op == last_op)
+                                 state <= mode_q == RUN_FRONTEND ? COMPLETE : CLASSIFY_REQUEST;
                              else begin current_op <= current_op + 4'd1; state <= FETCH_DESC; end
+                    CLASSIFY_REQUEST: if (classify_valid && classify_ready) state <= CLASSIFY_WAIT;
+                    CLASSIFY_WAIT: begin
+                        if (classify_error) begin
+                            error_code <= LERR_OPERATION; error <= 1; state <= FAILED;
+                        end else if (classify_done) state <= COMPLETE;
+                    end
                     COMPLETE: begin done <= 1; state <= IDLE; end
                     FAILED: ; // Partial writes are not rolled back. Shared reset required.
                     default: begin error_code <= LERR_DESCRIPTOR; error <= 1; state <= FAILED; end
