@@ -1,11 +1,13 @@
 `timescale 1ns/1ps
-// S4 internal streaming top, not a physical FPGA pin top.
-// Supports FRONTEND and FC_TAIL; FULL/DCIM/Argmax are not implemented yet.
+// S5-D1 internal streaming top, not a physical FPGA pin top.
+// FULL completes after FC2 commits eight UINT8 results, not after Argmax.
+// Both domains require a common reset event and locally synchronous release.
 module kws_inference_top #(
     parameter bit RESULT_PIPELINED = 1'b0,
     parameter bit POSTPROCESS_PIPELINED = 1'b1
 ) (
     input logic clk, rst,
+    input logic clk_cim, rst_cim,
     input logic start_valid,
     output logic start_ready,
     input kws_system_pkg::inference_mode_t run_mode,
@@ -45,6 +47,7 @@ module kws_inference_top #(
     logic load_valid, load_ready, load_done, load_error;
     logic weight_load_valid, weight_load_ready, weight_load_done, weight_load_error;
     logic pe_cmd_valid, pe_cmd_ready, pe_done, pe_error;
+    logic dcim_cmd_valid, dcim_cmd_ready, dcim_done, dcim_error;
     logic pool_valid, pool_ready, pool_done, pool_error;
     logic input_enable, weight_enable, path_input_ready, path_weight_ready;
     logic host_read_valid, host_read_ready;
@@ -71,15 +74,17 @@ module kws_inference_top #(
         .weight_load_valid(weight_load_valid), .weight_load_ready(weight_load_ready),
         .weight_load_done(weight_load_done), .weight_load_error(weight_load_error),
         .pe_cmd_valid(pe_cmd_valid), .pe_cmd_ready(pe_cmd_ready), .pe_done(pe_done), .pe_error(pe_error),
+        .dcim_cmd_valid(dcim_cmd_valid), .dcim_cmd_ready(dcim_cmd_ready), .dcim_done(dcim_done), .dcim_error(dcim_error),
         .pool_valid(pool_valid), .pool_ready(pool_ready), .pool_done(pool_done), .pool_error(pool_error),
         .path_busy(path_busy), .path_fault(path_fault)
     );
     kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED), .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) path (
-        // S4 scheduler remains PE/Pool-only until the full-sequence milestone.
-        .clk_cim(clk),.rst_cim(rst),.weight_backend(1'b0),
-        .dcim_cmd_valid(1'b0),.dcim_cmd_ready(),.dcim_layer_id(3'd0),.dcim_relu_enable(1'b0),
-        .dcim_src_base(15'd0),.dcim_dst_base(15'd0),.dcim_width(8'd0),.dcim_height(8'd0),
-        .dcim_done(),.dcim_error(),.dcim_resident_valid(),
+        .clk_cim(clk_cim),.rst_cim(rst_cim),.weight_backend(cfg.backend == BACKEND_DCIM),
+        .dcim_cmd_valid(dcim_cmd_valid),.dcim_cmd_ready(dcim_cmd_ready),
+        .dcim_layer_id(cfg.layer_id),.dcim_relu_enable(cfg.relu_enable),
+        .dcim_src_base(cfg.src_base),.dcim_dst_base(cfg.dst_base),
+        .dcim_width(cfg.input_width),.dcim_height(cfg.input_height),
+        .dcim_done(dcim_done),.dcim_error(dcim_error),.dcim_resident_valid(),
         .clk(clk), .rst(rst),
         .load_valid(load_valid), .load_ready(load_ready), .load_mode(WRITE_LINEAR),
         .load_base(15'd0), .load_count(input_count), .load_width(8'd0), .load_height(8'd0), .load_channels(6'd0),

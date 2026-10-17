@@ -25,7 +25,7 @@ module tb_kws_s4_software;
     logic [15:0] read_count=32768;
     logic [7:0] read_data;
     logic read_last,read_done,read_error;
-    kws_inference_top #(.RESULT_PIPELINED(RESULT_PIPELINED)) dut (.*);
+    kws_inference_top #(.RESULT_PIPELINED(RESULT_PIPELINED)) dut (.clk_cim(clk), .rst_cim(rst), .*);
     logic [7:0] quant_input[0:8063],pool1[0:2015],relu1[0:21959],pool2[0:5399];
     logic [7:0] flatten[0:143],relu4[0:31],fc2[0:7];
     logic [7:0] wconv[0:107],wfc1[0:4607],wfc2[0:255];
@@ -230,15 +230,15 @@ module tb_kws_s4_software;
         $readmemh({vectors,"/fc2_weights.mem"},wfc2);
         if($test$plusargs("CORRUPT_GOLDEN")) relu1[0]^=8'd1;
         reset_all();run_segment(0);scan_ram();run_segment(1);scan_ram();
-        // Unsupported FULL must not issue requests or touch memory.
-        @(negedge clk);run_mode=RUN_FULL;start_valid=1;
+        // Reserved mode must not issue requests or touch memory; FULL is now legal.
+        @(negedge clk);run_mode=inference_mode_t'(3);start_valid=1;
         @(negedge clk);start_valid=0;
         while(!error) begin
             if(input_request_valid || weight_request_valid || dut.path.r_en || dut.path.w_en)
-                $fatal(1,"FULL moved data");
+                $fatal(1,"Invalid mode moved data");
             @(negedge clk);
         end
-        if(error_code!=LERR_MODE || done || !busy) $fatal(1,"FULL rejection");
+        if(error_code!=LERR_MODE || done || !busy) $fatal(1,"Invalid mode rejection");
         reset_all();
         // Interrupt a real load via source_error; common reset recovers.
         @(negedge clk);run_mode=RUN_FC_TAIL;start_valid=1;

@@ -17,6 +17,7 @@ module tb_layer_controller;
     logic load_valid,load_ready=0,load_done=0,load_error=0;
     logic weight_load_valid,weight_load_ready=0,weight_load_done=0,weight_load_error=0;
     logic pe_cmd_valid,pe_cmd_ready=0,pe_done=0,pe_error=0;
+    logic dcim_cmd_valid,dcim_cmd_ready=0,dcim_done=0,dcim_error=0;
     logic pool_valid,pool_ready=0,pool_done=0,pool_error=0;
     logic path_busy=0,path_fault=0;
     integer cycles=0,successes=0,failures=0,operations=0;
@@ -27,7 +28,7 @@ module tb_layer_controller;
         if(!rst) begin
             if(done && error) $fatal(1,"Two terminal statuses");
             if(busy && start_ready) $fatal(1,"Start ready while busy");
-            if(int'(load_valid)+int'(weight_load_valid)+int'(pe_cmd_valid)+int'(pool_valid)>1)
+            if(int'(load_valid)+int'(weight_load_valid)+int'(pe_cmd_valid)+int'(pool_valid)+int'(dcim_cmd_valid)>1)
                 $fatal(1,"Multiple path commands");
             if(op_done) operations++;
         end
@@ -37,6 +38,7 @@ module tb_layer_controller;
         input_request_ready=0;weight_request_ready=0;source_error=0;
         load_ready=0;load_done=0;load_error=0;weight_load_ready=0;weight_load_done=0;weight_load_error=0;
         pe_cmd_ready=0;pe_done=0;pe_error=0;pool_ready=0;pool_done=0;pool_error=0;path_busy=0;path_fault=0;
+        dcim_cmd_ready=0;dcim_done=0;dcim_error=0;
         repeat(2) @(negedge clk);rst=0;@(negedge clk);
         if(!start_ready || busy || error_code!=LERR_NONE) $fatal(1,"Reset failed");
     endtask
@@ -58,6 +60,7 @@ module tb_layer_controller;
                 3: valid_now=weight_load_valid;
                 4: valid_now=pe_cmd_valid;
                 5: valid_now=pool_valid;
+                6: valid_now=dcim_cmd_valid;
             endcase
         end
         saved=active_descriptor;
@@ -70,6 +73,7 @@ module tb_layer_controller;
                 3: valid_now=weight_load_valid;
                 4: valid_now=pe_cmd_valid;
                 5: valid_now=pool_valid;
+                6: valid_now=dcim_cmd_valid;
             endcase
             if(!valid_now || active_descriptor!==saved) $fatal(1,"Command not stable kind=%0d",kind);
         end
@@ -80,10 +84,11 @@ module tb_layer_controller;
             3: weight_load_ready=1;
             4: pe_cmd_ready=1;
             5: pool_ready=1;
+            6: dcim_cmd_ready=1;
         endcase
         @(negedge clk);
         input_request_ready=0;load_ready=0;weight_request_ready=0;
-        weight_load_ready=0;pe_cmd_ready=0;pool_ready=0;
+        weight_load_ready=0;pe_cmd_ready=0;pool_ready=0;dcim_cmd_ready=0;
     endtask
     task automatic input_stage;
         accept_command(0);
@@ -92,7 +97,7 @@ module tb_layer_controller;
         accept_command(1);
         repeat(5) begin
             @(negedge clk);
-            if(!input_stream_enable || weight_request_valid || pe_cmd_valid || pool_valid)
+            if(!input_stream_enable || weight_request_valid || pe_cmd_valid || pool_valid || dcim_cmd_valid)
                 $fatal(1,"Input advanced before completion");
         end
         load_done=1;@(negedge clk);load_done=0;
@@ -101,20 +106,23 @@ module tb_layer_controller;
         accept_command(2);accept_command(3);
         repeat(5) begin
             @(negedge clk);
-            if(!weight_stream_enable || pe_cmd_valid) $fatal(1,"Weight advanced early");
+            if(!weight_stream_enable || pe_cmd_valid || dcim_cmd_valid) $fatal(1,"Weight advanced early");
         end
         weight_load_done=1;@(negedge clk);weight_load_done=0;
     endtask
-    task automatic operation(input bit is_pool,input integer index);
-        accept_command(is_pool ? 5 : 4);
+    // 0=PE, 1=Pool, 2=DCIM. Exercise non-owner done AND error isolation.
+    task automatic operation(input integer backend,input integer index);
+        accept_command(backend==1 ? 5 : backend==2 ? 6 : 4);
         // Wrong backend's completion must not advance this operation.
-        pe_done=is_pool;pool_done=!is_pool;
+        pe_done=backend!=0;pool_done=backend!=1;dcim_done=backend!=2;
+        pe_error=backend!=0;pool_error=backend!=1;dcim_error=backend!=2;
         repeat(5) begin
             @(negedge clk);
-            if(int'(current_op)!=index || op_done || done) $fatal(1,"Wrong done advanced operation");
+            if(int'(current_op)!=index || op_done || done || error) $fatal(1,"Wrong backend advanced operation");
         end
-        pe_done=!is_pool;pool_done=is_pool;
-        @(negedge clk);pe_done=0;pool_done=0;
+        pe_error=0;pool_error=0;dcim_error=0;
+        pe_done=backend==0;pool_done=backend==1;dcim_done=backend==2;
+        @(negedge clk);pe_done=0;pool_done=0;dcim_done=0;
         if(!op_done || int'(current_op)!=index) $fatal(1,"Missing operation completion");
     endtask
     task automatic check_failure(input layer_error_t expected);
@@ -122,7 +130,7 @@ module tb_layer_controller;
         if(error_code!=expected || done || !busy) $fatal(1,"Wrong failure code");
         @(negedge clk);
         repeat(4) begin
-            if(error || start_ready || load_valid || weight_load_valid || pe_cmd_valid || pool_valid ||
+            if(error || start_ready || load_valid || weight_load_valid || pe_cmd_valid || pool_valid || dcim_cmd_valid ||
                input_stream_enable || weight_stream_enable) $fatal(1,"Failure did not lock/pulse");
             @(negedge clk);
         end
@@ -135,7 +143,11 @@ module tb_layer_controller;
         @(negedge clk);if(done) $fatal(1,"Done not pulse");
         launch(RUN_FC_TAIL);input_stage();weights();operation(0,7);weights();operation(0,8);
         while(!done) @(negedge clk);successes++;
-        reset_all();launch(RUN_FULL);check_failure(LERR_MODE);
+        reset_all();launch(RUN_FULL);input_stage();
+        operation(1,0);weights();operation(0,1);operation(1,2);
+        weights();operation(2,3);operation(1,4);weights();operation(2,5);
+        operation(1,6);weights();operation(0,7);weights();operation(0,8);
+        while(!done) @(negedge clk);successes++;
         reset_all();launch(inference_mode_t'(3));check_failure(LERR_MODE);
         reset_all();launch(RUN_FRONTEND);accept_command(0);source_error=1;check_failure(LERR_SOURCE);
         reset_all();launch(RUN_FRONTEND);accept_command(0);accept_command(1);
@@ -146,6 +158,9 @@ module tb_layer_controller;
         pool_error=1;pool_done=1;check_failure(LERR_OPERATION);
         reset_all();launch(RUN_FC_TAIL);input_stage();weights();accept_command(4);
         pe_error=1;pe_done=1;check_failure(LERR_OPERATION);
+        reset_all();launch(RUN_FULL);input_stage();
+        operation(1,0);weights();operation(0,1);operation(1,2);weights();accept_command(6);
+        dcim_error=1;dcim_done=1;check_failure(LERR_OPERATION);
         reset_all();launch(RUN_FRONTEND);accept_command(0);path_fault=1;check_failure(LERR_PATH);
         // Descriptor corruption is fault injection only, never a numeric bypass.
         reset_all();launch(RUN_FRONTEND);
@@ -153,7 +168,7 @@ module tb_layer_controller;
         input_stage();check_failure(LERR_DESCRIPTOR);release dut.rom_valid;
         // Reset cancels an outstanding input stream; no stale done may survive.
         reset_all();launch(RUN_FRONTEND);accept_command(0);accept_command(1);reset_all();
-        if(operations!=5 || successes!=2 || failures!=9) $fatal(1,"Unit coverage missing");
+        if(operations!=17 || successes!=3 || failures!=9) $fatal(1,"Unit coverage missing");
         $display("PASS layer_controller successes=%0d operations=%0d failures=%0d",successes,operations,failures);
         $finish;
     end

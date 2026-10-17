@@ -4,7 +4,7 @@
 
 2026-10-05工作順序決定：**先完成架構，再評估FSM／介面／面積最佳化**。候選及驗收条件見[延後最佳化清單](DEFERRED_OPTIMIZATION_BACKLOG.md)，全部暫緩、未實作，不得在S5整合時順便套用。正確性錯誤或實測整合阻礙需另提最小修正，不以暫緩為由忽略。
 
-狀態：S1/S2/S3及S4的PE／Pool區段自動排程功能模擬通過；真實軟體樣本的Pool1→Conv1/ReLU→Pool2及獨立FC1→FC2分支逐值一致。S5-A單patch及S5-B真實chip雙時脈整合功能模擬通過；S5-C/D、Argmax整合、完整推論及Vivado/板測尚未完成；S4頂層目前拒絕FULL模式。見[S5-B跨域整合](S5B_DCIM_CDC_INTEGRATION.md)、[S5-A設計與驗證](S5A_DCIM_BACKEND.md)、[S4控制與驗證](S4_LAYER_SEQUENCER.md)、[控制指南](ACTIVATION_PATH_CONTROL_GUIDE.md)與[S3驗證](S3_SHARED_PATH_VERIFICATION.md)。
+最新狀態（2026-10-17）：S1～S4及S5-A/B/C已有功能模擬紀錄；共用PoT Step 2已提交並經Claude定向審查。**S5-D1已撰寫FULL九操作排程與雙時脈頂層，尚待Claude執行完整功能驗證，不宣稱全模型通過。** FULL不再拒絕；Argmax、Vivado／STA／實體CDC／板測仍未完成。最新設計與驗收見[S5-D1](S5D1_FULL_INFERENCE.md)及[Claude驗證任務](S5D1_CLAUDE_REVIEW_PROMPT.md)。下方各日期條目為歷史紀錄，與最新狀態衝突時以本段為準。
 
 ## 0. 本文件的目的與使用規則
 
@@ -42,6 +42,8 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 
 ## 2. 已有模組及重用邊界
 
+2026-10-17 S5-D1：沿用15-state `layer_controller`，增加DCIM操作端點與RUN_FULL(0..8)；`kws_inference_top`新增clk_cim/rst_cim並連接既有共享path，權重backend來自保存的descriptor。不新增PoT、RAM、運算核心、AXI或Argmax。新增真實全鏈TB，舊S4 TB只將非法模式案例從FULL改成保留值3並補clock連線。詳細執行狀態見S5D1文件；本階段完整模擬交Claude執行。
+
 2026-10-16第二批（功能模擬通過）：`kws_activation_path`新增DCIM_RUN、獨立resident與權重目的選擇，共用原Reader/Writer/RAM與唯一PoT；DCIM controller新增empty輸入。兩種PoT各通過四次PE/DCIM切換、完整Conv2→Pool3→Conv3→Pool4與131072筆RAM讀回，既有回歸完成。Claude另回報scratchpad回歸含獨立DCIM整層測試通過。2026-10-17追加審查修正：Idle raw殘留同時阻擋握手並FAULT、DCIM count接0、非法權重請求使resident失效的契約寫明；僅執行定向補測，結果見[第二步](SHARED_POSTPROCESS_STEP2.md)、[Claude審查](SHARED_POSTPROCESS_STEP2_CLAUDE_PROMPT.md)。S4 scheduler仍未接DCIM，FULL仍拒絕。下列較早「尚未接共享path」為歷史進度，應以本條最新狀態為準；Vivado／實體CDC／板測仍未驗證。
 
 2026-10-16共用後處理前置審查F1～F3已修正：保留排空gate並將運算階段外多餘PE結果轉FAULT；正式TB補NEXT_PATCH／DRAIN_LAYER異常、raw done當拍排空檢查與external Golden負測；Makefile三處改grep、log標識POST與Host讀回反壓。`test-pe-external-post`四配置、`test-s4-software`兩pipeline×兩seed及S4／PE controller lint全部通過。此項尚未接入DCIM共享PoT；完整結果與限制見SHARED_POSTPROCESS_STEP1.md。
@@ -71,11 +73,11 @@ flowchart TB
   LC --> W[Feature-map Writer]
   M[單一 Activation Buffer：來源區與目的區] --> R
   R --> PE[pe_memory_engine：raw INT32]
-  R --> DC[DCIM backend：待接共享path]
+  R --> DC[DCIM subsystem：CDC／master／chip]
   R --> PO[Pool 路徑]
   R --> AR[FC2 八筆結果 → Argmax]
   PE --> POST[外置PoT／ReLU／FIFO]
-  DC -.下一步共用.-> POST
+  DC --> POST
   POST --> W
   PO --> W
   W --> M

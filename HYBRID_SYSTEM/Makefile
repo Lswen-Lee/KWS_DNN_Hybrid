@@ -79,6 +79,25 @@ SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
 SOFTWARE_WEIGHT_DIR ?= ../../layer_weights_int8_pot_ceil_zp128
 S4_CONTROL_RTL := rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv
 S4_RTL = $(ACTIVATION_PATH_RTL) rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv rtl/integration/kws_inference_top.sv
+# S5-D1 uses the same RTL list; no separate copy of the engines or PoT.
+S5D_PIPE ?= 0
+S5D_POST ?= 0
+S5D_SEED ?= 505
+S5D_HALF_PS ?= 9434
+S5D_PHASE_PS ?= 2700
+S5D_DIR = $(BUILD_DIR)/inference_p$(S5D_PIPE)_post$(S5D_POST)
+S5D_EXE = $(S5D_DIR)/Vtb_kws_inference_top
+S5D_ARGS = +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$(S5D_SEED) +CIM_HALF_PS=$(S5D_HALF_PS) +PHASE_PS=$(S5D_PHASE_PS)
+.PHONY: build-inference-top test-inference-top test-inference-negative lint-inference-top
+lint-inference-top: lint-s4
+build-inference-top: generate-activation-path-vectors | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$(S5D_PIPE)" "-GPOSTPROCESS_PIPELINED=1'b$(S5D_POST)" --top-module tb_kws_inference_top -Mdir $(S5D_DIR) $(S4_RTL) tb/integration/tb_kws_inference_top.sv
+test-inference-top: build-inference-top
+	@log=$(S5D_DIR)/seed_$(S5D_SEED)_half_$(S5D_HALF_PS)_phase_$(S5D_PHASE_PS).log; \
+	$(S5D_EXE) $(S5D_ARGS) > $$log 2>&1; status=$$?; \
+	if [ $$status -ne 0 ]; then tail -40 $$log; exit $$status; fi; grep '^PASS S5D' $$log
+test-inference-negative: build-inference-top
+	@ulimit -c 0; if $(S5D_EXE) $(S5D_ARGS) +CORRUPT_GOLDEN > $(S5D_DIR)/negative.log 2>&1; then echo 'FAIL corrupted Conv2 golden accepted'; exit 1; else grep -q 'S5D commit mismatch op=3' $(S5D_DIR)/negative.log && echo 'PASS S5D expected Conv2 golden rejection'; fi
 .PHONY: test-layer-descriptor test-layer-controller test-s4-software lint-s4
 test-layer-descriptor: | $(BUILD_DIR)
 	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-UNUSEDPARAM --top-module tb_layer_descriptor_rom -Mdir $(BUILD_DIR)/layer_descriptor rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv tb/control/tb_layer_descriptor_rom.sv

@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// S4 sequencer. Bytes bypass this module; it owns the path for the WHOLE run.
+// S5-D1 sequencer. Bytes bypass this module; it owns the path for the WHOLE run.
 // Request handshake means the source accepts the request, not load completion.
 // Only registered path terminal pulses advance the operation index.
 module layer_controller (
@@ -26,6 +26,8 @@ module layer_controller (
     input logic weight_load_ready, weight_load_done, weight_load_error,
     output logic pe_cmd_valid,
     input logic pe_cmd_ready, pe_done, pe_error,
+    output logic dcim_cmd_valid,
+    input logic dcim_cmd_ready, dcim_done, dcim_error,
     output logic pool_valid,
     input logic pool_ready, pool_done, pool_error,
     input logic path_busy, path_fault
@@ -58,9 +60,19 @@ module layer_controller (
     assign input_stream_enable = enabled && state == WAIT_INPUT;
     assign weight_stream_enable = enabled && state == WAIT_WEIGHT;
     assign pe_cmd_valid = enabled && state == ISSUE_OPERATION && active_descriptor.backend == BACKEND_PE;
+    assign dcim_cmd_valid = enabled && state == ISSUE_OPERATION && active_descriptor.backend == BACKEND_DCIM;
     assign pool_valid = enabled && state == ISSUE_OPERATION && active_descriptor.backend == BACKEND_POOL;
-    assign operation_error = active_descriptor.backend == BACKEND_POOL ? pool_error : pe_error;
-    assign operation_done = active_descriptor.backend == BACKEND_POOL ? pool_done : pe_done;
+    // Never alias an unknown backend to PE. Descriptor validation rejects it.
+    always_comb begin
+        operation_error = 1'b0;
+        operation_done = 1'b0;
+        case (active_descriptor.backend)
+            BACKEND_POOL: begin operation_error = pool_error; operation_done = pool_done; end
+            BACKEND_PE: begin operation_error = pe_error; operation_done = pe_done; end
+            BACKEND_DCIM: begin operation_error = dcim_error; operation_done = dcim_done; end
+            default: ;
+        endcase
+    end
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -79,12 +91,12 @@ module layer_controller (
                         mode_q <= run_mode; error_code <= LERR_NONE; state <= CHECK_RUN;
                     end
                     CHECK_RUN: begin
-                        if (mode_q == RUN_FRONTEND || mode_q == RUN_FC_TAIL) begin
-                            current_op <= mode_q == RUN_FRONTEND ? 4'd0 : 4'd7;
+                        if (mode_q == RUN_FRONTEND || mode_q == RUN_FC_TAIL || mode_q == RUN_FULL) begin
+                            current_op <= mode_q == RUN_FC_TAIL ? 4'd7 : 4'd0;
                             last_op <= mode_q == RUN_FRONTEND ? 4'd2 : 4'd8;
                             state <= REQUEST_INPUT;
                         end else begin
-                            // FULL is intentionally rejected before any data movement.
+                            // Reserved mode is rejected before any data movement.
                             error_code <= LERR_MODE; error <= 1; state <= FAILED;
                         end
                     end
@@ -104,7 +116,8 @@ module layer_controller (
                         if (!descriptor_valid_q ||
                             !((active_descriptor.backend == BACKEND_POOL && active_descriptor.op_kind == OP_POOL) ||
                               (active_descriptor.backend == BACKEND_PE &&
-                               (active_descriptor.op_kind == OP_CONV || active_descriptor.op_kind == OP_FC)))) begin
+                               (active_descriptor.op_kind == OP_CONV || active_descriptor.op_kind == OP_FC)) ||
+                              (active_descriptor.backend == BACKEND_DCIM && active_descriptor.op_kind == OP_CONV))) begin
                             error_code <= LERR_DESCRIPTOR; error <= 1; state <= FAILED;
                         end else if (active_descriptor.backend == BACKEND_POOL) state <= ISSUE_OPERATION;
                         else state <= REQUEST_WEIGHT;
@@ -116,7 +129,8 @@ module layer_controller (
                             error_code <= LERR_WEIGHT; error <= 1; state <= FAILED;
                         end else if (weight_load_done) state <= ISSUE_OPERATION;
                     end
-                    ISSUE_OPERATION: if ((pe_cmd_valid && pe_cmd_ready) || (pool_valid && pool_ready))
+                    ISSUE_OPERATION: if ((pe_cmd_valid && pe_cmd_ready) || (pool_valid && pool_ready) ||
+                                         (dcim_cmd_valid && dcim_cmd_ready))
                         state <= WAIT_OPERATION;
                     WAIT_OPERATION: begin
                         if (operation_error) begin
