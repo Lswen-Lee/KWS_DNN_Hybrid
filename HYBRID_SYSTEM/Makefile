@@ -81,6 +81,39 @@ SOFTWARE_ACTIVATION_DIR ?= ../../layer_activation_uint8_pot_ceil_zp128
 SOFTWARE_WEIGHT_DIR ?= ../../layer_weights_int8_pot_ceil_zp128
 S4_CONTROL_RTL := rtl/kws_system_pkg.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv
 S4_RTL = $(ACTIVATION_PATH_RTL) rtl/datapath/argmax_8.sv rtl/control/layer_descriptor_rom.sv rtl/control/layer_controller.sv rtl/integration/kws_inference_top.sv
+S6_SOURCE_RTL := board/kws/kws_demo_rom.sv board/kws/kws_demo_source.sv
+S6_CORE_RTL = $(S4_RTL) $(S6_SOURCE_RTL) board/kws/kws_board_self_test.sv board/kws/kws_board_core.sv
+S6_BOARD_RTL = $(S6_CORE_RTL) board/kws/kws_clock_reset.sv board/kws/kws_board_top.sv
+.PHONY: print-kws-board-sources generate-kws-board-vectors test-kws-board-vectors lint-kws-board test-kws-board-units test-kws-board-core test-kws-board-negative
+print-kws-board-sources:
+	@printf '%s\n' $(S6_BOARD_RTL)
+generate-kws-board-vectors: generate-activation-path-vectors
+	python3 scripts/generate_kws_board_vectors.py
+test-kws-board-vectors: generate-kws-board-vectors
+	python3 scripts/test_kws_board_vectors.py
+lint-kws-board:
+	$(VERILATOR) --lint-only --timing -Wall $(PATH_LINT_FLAGS) -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_board_top $(S6_BOARD_RTL)
+test-kws-board-units: generate-kws-board-vectors | $(BUILD_DIR)
+	@set -e; for unit in source self_test clock_reset; do \
+	case $$unit in source) top=tb_kws_demo_source; rtl='$(S6_SOURCE_RTL)';; self_test) top=tb_kws_board_self_test; rtl=board/kws/kws_board_self_test.sv;; clock_reset) top=tb_kws_clock_reset; rtl=board/kws/kws_clock_reset.sv;; esac; \
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module $$top -Mdir $(BUILD_DIR)/s6_$$unit $$rtl tb/board/$$top.sv; \
+	$(BUILD_DIR)/s6_$$unit/V$$top +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) > $(BUILD_DIR)/s6_$$unit/result.log 2>&1 || { tail -30 $(BUILD_DIR)/s6_$$unit/result.log; exit 1; }; \
+	grep '^PASS' $(BUILD_DIR)/s6_$$unit/result.log; done
+	@ulimit -c 0; if $(BUILD_DIR)/s6_source/Vtb_kws_demo_source +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_EXPECTED > $(BUILD_DIR)/s6_source/negative.log 2>&1; then echo 'FAIL corrupt source reference accepted'; exit 1; else grep -q 'source byte mismatch base=8172' $(BUILD_DIR)/s6_source/negative.log && echo 'PASS source negative'; fi
+S6_PIPE ?= 0
+S6_POST ?= 1
+S6_DIR = $(BUILD_DIR)/s6_core_p$(S6_PIPE)_post$(S6_POST)
+.PHONY: build-kws-board-core
+build-kws-board-core: generate-kws-board-vectors | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$(S6_PIPE)" "-GPOSTPROCESS_PIPELINED=1'b$(S6_POST)" --top-module tb_kws_board_core -Mdir $(S6_DIR) $(S6_CORE_RTL) tb/board/tb_kws_board_core.sv
+test-kws-board-core: build-kws-board-core
+	@$(S6_DIR)/Vtb_kws_board_core +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) > $(S6_DIR)/full.log 2>&1; rc=$$?; if [ $$rc -ne 0 ]; then tail -30 $(S6_DIR)/full.log; exit $$rc; fi; grep '^PASS S6' $(S6_DIR)/full.log
+test-kws-board-negative: build-kws-board-core
+	@ulimit -c 0; if $(S6_DIR)/Vtb_kws_board_core +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +CORRUPT_GOLDEN > $(S6_DIR)/negative.log 2>&1; then echo 'FAIL corrupt board golden accepted'; exit 1; else grep -q 'board commit mismatch op=3' $(S6_DIR)/negative.log && echo 'PASS board negative'; fi
+.PHONY: test-kws-board-top
+test-kws-board-top: generate-kws-board-vectors | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module tb_kws_board_top -Mdir $(BUILD_DIR)/s6_top $(S6_BOARD_RTL) tb/board/tb_kws_board_top.sv
+	@$(BUILD_DIR)/s6_top/Vtb_kws_board_top > $(BUILD_DIR)/s6_top/result.log 2>&1; rc=$$?; if [ $$rc -ne 0 ]; then tail -30 $(BUILD_DIR)/s6_top/result.log; exit $$rc; fi; grep '^PASS S6' $(BUILD_DIR)/s6_top/result.log
 # S5-D1 uses the same RTL list; no separate copy of the engines or PoT.
 S5D_PIPE ?= 0
 S5D_POST ?= 0

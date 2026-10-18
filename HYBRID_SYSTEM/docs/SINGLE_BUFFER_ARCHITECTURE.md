@@ -2,6 +2,12 @@
 
 基準版本：v1.0（2026-10-03）
 
+## S6 最新進度（2026-10-18，優先於下方歷史狀態）
+
+使用者提供Claude報告：S5-D2正常FULL、定向reset/錯誤及雙完成突變已有功能模擬證據；尚無實體驗證。依使用者授權建立固定sample6988的板級整合，保留既有單一RAM、共用PoT、PE/DCIM與CDC，不修改推論RTL。新增來源ROM/供應FSM、測試supervisor、board core/top、125/53MHz clock/reset、XDC與正常非OOC匯入流程。詳見[S6架構](S6_BOARD_INTEGRATION.md)。
+
+本次新檔已撰寫，**生成器、lint、新TB、Vivado與板測尚未執行**；依要求交由Claude執行，任務見[S6驗證與回傳格式](S6_CLAUDE_REVIEW_PROMPT.md)。尚不宣稱BRAM推導、容量、CDC實體約束或時序通過。原S5定向TB的錯誤訊息排程差異未在本次修改。
+
 2026-10-05工作順序決定：**先完成架構，再評估FSM／介面／面積最佳化**。候選及驗收条件見[延後最佳化清單](DEFERRED_OPTIMIZATION_BACKLOG.md)，全部暫緩、未實作，不得在S5整合時順便套用。正確性錯誤或實測整合阻礙需另提最小修正，不以暫緩為由忽略。
 
 最新狀態（2026-10-17）：S1～S4及S5-A/B/C已有功能模擬紀錄；共用PoT Step 2已提交並經Claude定向審查。**S5-D1已撰寫FULL九操作排程與雙時脈頂層，尚待Claude執行完整功能驗證，不宣稱全模型通過。** FULL不再拒絕；Argmax、Vivado／STA／實體CDC／板測仍未完成。最新設計與驗收見[S5-D1](S5D1_FULL_INFERENCE.md)及[Claude驗證任務](S5D1_CLAUDE_REVIEW_PROMPT.md)。下方各日期條目為歷史紀錄，與最新狀態衝突時以本段為準。
