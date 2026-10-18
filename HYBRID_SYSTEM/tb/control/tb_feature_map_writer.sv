@@ -122,7 +122,7 @@ module tb_feature_map_writer;
             send(0,t==0?2:0,t==1?2:0,t==2?3:0,8'h99,0);
             finish_transaction(1);
         end
-        $display("[6] Reset cancels pending write, no false completion; recovery");
+        $display("[6] Reset cancels in-flight pipeline write, no false completion; recovery");
         launch(WRITE_LINEAR,500,0,0,0,3); wait_ready();
         send(500,0,0,0,8'h11,1);
         @(negedge clk); in_valid=0; rst=1;

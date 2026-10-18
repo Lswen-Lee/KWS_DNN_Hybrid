@@ -56,6 +56,43 @@ module tb_kws_inference_top;
     logic [31:0] rng=505;
     integer seed_arg=505,cycles=0,phase=-1,next_op=0,reads=0,writes=0;
     integer input_requests=0,weight_requests=0,read_checks=0,read_stalls=0;
+    // Measurement only: stop at engine done, BEFORE debug RAM scan.
+    integer perf_start=0,perf_input_start=0,perf_weight_start=0,perf_op_start=0;
+    integer perf_input=0,perf_weights=0,perf_ops=0;
+    bit perf_active=0;
+    always @(posedge clk) begin : performance_monitor
+        if(rst) begin
+            perf_active=0;perf_input=0;perf_weights=0;perf_ops=0;
+        end else begin
+            if(start_valid && start_ready) begin
+                perf_start=int'($time/8);perf_active=1;
+                perf_input=0;perf_weights=0;perf_ops=0;
+            end
+            if(perf_active) begin
+                if(input_request_valid && input_request_ready) perf_input_start=int'($time/8);
+                if(dut.load_done) perf_input=int'($time/8)-perf_input_start;
+                if(weight_request_valid && weight_request_ready) perf_weight_start=int'($time/8);
+                if(dut.weight_load_done) begin
+                    perf_weights+=int'($time/8)-perf_weight_start;
+                    $display("PERF weight layer=%0d cycles=%0d",weight_layer_id,int'($time/8)-perf_weight_start);
+                end
+                if((dut.pe_cmd_valid && dut.pe_cmd_ready) ||
+                   (dut.dcim_cmd_valid && dut.dcim_cmd_ready) || (dut.pool_valid && dut.pool_ready))
+                    perf_op_start=int'($time/8);
+                if(op_done) begin
+                    perf_ops+=int'($time/8)-perf_op_start;
+                    $display("PERF operation=%0d cycles=%0d",current_op,int'($time/8)-perf_op_start);
+                end
+                if(done) begin
+                    $display("PERF inference cycles=%0d input=%0d weights=%0d operations=%0d remainder=%0d ns=%0d",
+                        int'($time/8)-perf_start,perf_input,perf_weights,perf_ops,
+                        int'($time/8)-perf_start-perf_input-perf_weights-perf_ops,
+                        (int'($time/8)-perf_start)*8);
+                    perf_active=0;
+                end
+            end
+        end
+    end
     integer read_totals[0:8]='{8064,16470,21960,39312,4368,5184,576,432,32};
     integer counts[0:8]='{2016,21960,5400,4368,1008,576,144,32,8};
     integer bases[0:8]='{8064,10080,0,5400,0,1008,0,144,0};

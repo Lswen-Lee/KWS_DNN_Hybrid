@@ -206,6 +206,12 @@ test-activation-reader: | $(BUILD_DIR)
 lint-activation-reader:
 	$(VERILATOR) --lint-only -Wall -Wno-UNUSEDPARAM --top-module activation_reader rtl/kws_system_pkg.sv rtl/datapath/activation_reader.sv
 WRITER_RTL := $(ACTIVATION_RTL) rtl/control/feature_map_writer.sv
+.PHONY: test-writer-pipeline
+test-writer-pipeline: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL --top-module tb_feature_map_writer_pipeline -Mdir $(BUILD_DIR)/writer_pipeline $(WRITER_RTL) tb/integration/tb_feature_map_writer_pipeline.sv
+	@$(BUILD_DIR)/writer_pipeline/Vtb_feature_map_writer_pipeline > $(BUILD_DIR)/writer_pipeline/positive.log 2>&1 || { tail -30 $(BUILD_DIR)/writer_pipeline/positive.log; exit 1; }
+	@grep '^PASS' $(BUILD_DIR)/writer_pipeline/positive.log
+	@ulimit -c 0; if $(BUILD_DIR)/writer_pipeline/Vtb_feature_map_writer_pipeline +CORRUPT_EXPECTED > $(BUILD_DIR)/writer_pipeline/negative.log 2>&1; then echo 'FAIL corrupt pipeline golden accepted'; exit 1; else grep -q 'PIPELINE_SCOREBOARD mismatch' $(BUILD_DIR)/writer_pipeline/negative.log; fi
 .PHONY: test-feature-map-writer lint-feature-map-writer
 test: test-feature-map-writer
 lint: lint-feature-map-writer

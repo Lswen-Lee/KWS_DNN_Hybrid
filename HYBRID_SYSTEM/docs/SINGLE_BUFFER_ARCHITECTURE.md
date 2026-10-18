@@ -2,6 +2,10 @@
 
 基準版本：v1.0（2026-10-03）
 
+## Writer時序修正（2026-10-19，優先於歷史Writer描述）
+
+使用者核准針對整合routed最差owner→Writer路徑（WNS -3.744ns）實作五級Writer：S0接收、S1乘法、S2部分和、S3地址、S4檢查/pending；E0輸入→E5 RAM commit→最後commit下一拍done。保留四狀態及ports；非法筆和較晚在途交易取消，較早commit保留。accepted_count改為所有握手交易數，不再只算合法筆。單一RAM、共用PoT、上層controller及reset/CDC不改。新增管線TB與獨立PERF量測；功能/完整回歸交Claude執行，尚未測。見[Writer規格](FEATURE_MAP_WRITER_PIPELINE.md)及[驗證任務](WRITER_PIPELINE_CLAUDE_REVIEW_PROMPT.md)。
+
 ## S6 最新進度（2026-10-18，優先於下方歷史狀態）
 
 使用者提供Claude報告：S5-D2正常FULL、定向reset/錯誤及雙完成突變已有功能模擬證據；尚無實體驗證。依使用者授權建立固定sample6988的板級整合，保留既有單一RAM、共用PoT、PE/DCIM與CDC，不修改推論RTL。新增來源ROM/供應FSM、測試supervisor、board core/top、125/53MHz clock/reset、XDC與正常非OOC匯入流程。詳見[S6架構](S6_BOARD_INTEGRATION.md)。
