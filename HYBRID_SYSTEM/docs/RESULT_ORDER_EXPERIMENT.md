@@ -35,6 +35,27 @@ Writer 仍使用真實 channel tag 定址。關閉檢查時，合法範圍但錯
 
 ## Vivado 2023.2：兩個獨立非OOC專案
 
+### 一鍵自動合成／實作（2026-10-19新增）
+
+先關閉目前專案，在Vivado Tcl Console執行：
+
+```tcl
+set order_root {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/build/kws_order_auto_run01}
+set order_variants {checked unchecked}
+set order_jobs 4
+source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/board/kws/run_order_experiment.tcl}
+```
+
+不指定order_root時使用時間戳目錄。已存在會拒絕，不重設舊runs。只跑關閉版可設`order_variants {unchecked}`。此腳本呼叫既有匯入與報告腳本，整個board/kws資料夾及來源RTL需保留，並先生成build/kws_board_vectors。腳本不修改RTL/XDC，不生成bitstream；兩版各自合成至route_design，以相同Default策略比較。
+
+根目錄`summary.csv`記錄flow_status、WNS、WHS與setup_hold_status；COMPLETE只代表run完成，負slack仍記FAIL。TNS／失敗端點／pulse width請查看各版`reports/order/timing_summary.rpt`。另產生utilization、hierarchy、100條setup、20條hold、CDC、DRC、methodology、exceptions、clocks、route_status及routed.dcp。某版流程出錯會留下`<variant>_error.txt`，繼續另一版，最後回報錯誤；不把錯誤列成PASS。
+
+不得在兩版執行之間修改live來源。setup/hold PASS不代表CDC或未約束路徑已通過。
+
+`python3 board/kws/test_order_experiment_tcl.py`已通過Tcl 8.6 mock（透過libtcl，不需tclsh）：正常兩版、合成失敗後繼續另一版、負slack標FAIL、既有目錄拒絕且報告不變。mock只驗證控制流程，未驗證Vivado命令API／合成／布局繞線。Windows Vivado尚待使用者執行。
+
+### 手動GUI流程（沿用）
+
 先關閉現有 project，兩版使用相同 live RTL、ROM、125/53MHz與Default策略；兩次合成之間不要修改來源。不要直接拿不同策略的舊報告作為唯一baseline。
 
 ```tcl
