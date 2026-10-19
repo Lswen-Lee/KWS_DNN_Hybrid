@@ -4,7 +4,8 @@
 // Host ports are local synchronous streams, NOT AXI or a board pin interface.
 module kws_activation_path #(
     parameter bit RESULT_PIPELINED=1'b0,
-    parameter bit POSTPROCESS_PIPELINED=1'b1
+    parameter bit POSTPROCESS_PIPELINED=1'b1,
+    parameter bit CHECK_RESULT_ORDER=1'b1
 ) (
     input logic clk, rst,
     input logic clk_cim, rst_cim,
@@ -265,7 +266,7 @@ module kws_activation_path #(
         .in_y(owner==DCIM_RUN ? dw_y : owner==PE_RUN ? pw_y : load_y),.in_x(owner==DCIM_RUN ? dw_x : owner==PE_RUN ? pw_x : load_x),
         .wr_en(w_en),.wr_addr(w_addr),.wr_data(w_data),.busy(),.done(wc_done),.error(wc_error)
     );
-    pe_layer_controller pe_controller (
+    pe_layer_controller #(.CHECK_RESULT_ORDER(CHECK_RESULT_ORDER)) pe_controller (
         .clk(clk),.rst(rst),.cmd_valid(pe_cmd_valid && pe_cmd_ready),.cmd_ready(lc_ready),
         .cmd_is_fc(pe_is_fc),.cmd_layer_id(pe_layer_id),.cmd_relu_enable(pe_relu_enable),
         .cmd_src_base(pe_src_base),.cmd_dst_base(pe_dst_base),.cmd_width(pe_width),.cmd_height(pe_height),
@@ -301,7 +302,7 @@ module kws_activation_path #(
         .out_valid(raw_valid),.out_ready(raw_ready),.out_data(raw_data),.out_channel_id(raw_channel),
         .out_group_last(raw_last),.out_error(raw_error)
     );
-    dcim_layer_controller dcim_controller (
+    dcim_layer_controller #(.CHECK_RESULT_ORDER(CHECK_RESULT_ORDER)) dcim_controller (
         .clk(clk),.rst(rst),.cmd_valid(dcim_cmd_valid && dcim_cmd_ready),.cmd_ready(dc_ready),
         .cmd_layer_id(dcim_layer_id),.cmd_relu_enable(dcim_relu_enable),
         .cmd_src_base(dcim_src_base),.cmd_dst_base(dcim_dst_base),.cmd_width(dcim_width),.cmd_height(dcim_height),

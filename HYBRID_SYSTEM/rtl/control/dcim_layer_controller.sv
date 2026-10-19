@@ -3,7 +3,9 @@
 // Payload bypasses this module. All ports are synchronous to clk_sys (clk).
 // Owner locks resident weights/RAM ownership while busy. Reset ALL endpoints
 // together on fault; already committed RAM data cannot be rolled back.
-module dcim_layer_controller (
+module dcim_layer_controller #(
+    parameter bit CHECK_RESULT_ORDER = 1'b1
+) (
     input logic clk, rst,
     input logic cmd_valid,
     output logic cmd_ready,
@@ -89,7 +91,8 @@ module dcim_layer_controller (
         (activation_count >= 108 || reader_out_last != (activation_count == 107) || reader_done_seen);
     assign result_bad = active && post_valid &&
         (state != RUN_PATCH || post_error || result_count >= 12 ||
-         post_channel != {1'b0,result_count} || post_last != (result_count == 11));
+         (CHECK_RESULT_ORDER &&
+          (post_channel != {1'b0,result_count} || post_last != (result_count == 11))));
     assign completion_bad = active && (
         (reader_done && (state != RUN_PATCH || reader_done_seen || activation_after != 108)) ||
         (dcim_patch_done && (state != RUN_PATCH || dcim_done_seen || activation_after != 108)) ||

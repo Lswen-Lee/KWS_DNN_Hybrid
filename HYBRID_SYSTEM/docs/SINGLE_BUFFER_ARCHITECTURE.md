@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-19 S6獨立時序實驗：新增預設開啟的CHECK_RESULT_ORDER，僅控制PE/DCIM後處理結果channel/last一致性檢查。保留其他error/count/owner/排空保護，未加入PoT輸出FF，未改FSM週期。提供checked/unchecked正常板級專案入口；不宣稱時序改善。規格、驗證及Claude回傳要求見[順序檢查實驗](RESULT_ORDER_EXPERIMENT.md)。
+
 2026-10-19使用者要求先不改RTL，新增正常板級實體最佳化實驗Tcl：同一合成網表比較baseline/fanout，可選Explore；保持125/53MHz及原約束，不覆寫舊報告。PoT output FF與總容量8筆的握手契約僅規劃未實作。詳[實體實驗及PoT輸出規劃](PHYSICAL_EXPERIMENT_AND_POT_OUTPUT_PLAN.md)。Vivado尚未執行，不宣稱收斂或reset/CDC已解決。
 
 ## Writer時序修正（2026-10-19，優先於歷史Writer描述）

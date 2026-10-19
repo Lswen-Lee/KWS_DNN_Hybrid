@@ -5,6 +5,7 @@ module tb_kws_inference_top;
     import kws_system_pkg::*;
     parameter bit RESULT_PIPELINED=0;
     parameter bit POSTPROCESS_PIPELINED=0;
+    parameter bit CHECK_RESULT_ORDER=1;
     logic clk=0,clk_cim=0,reset_request=1;
     always #4 clk=~clk;
     integer cim_half_ps=9434,phase_ps=2700;
@@ -45,7 +46,8 @@ module tb_kws_inference_top;
     logic [7:0] read_data;
     logic read_last,read_done,read_error;
     kws_inference_top #(.RESULT_PIPELINED(RESULT_PIPELINED),
-        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) dut (.*);
+        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED),
+        .CHECK_RESULT_ORDER(CHECK_RESULT_ORDER)) dut (.*);
 
     logic [7:0] quant_input[0:8063],pool1[0:2015],relu1[0:21959],pool2[0:5399];
     logic [7:0] relu2[0:4367],pool3[0:1007],relu3[0:575],pool4[0:143],relu4[0:31],fc2[0:7];

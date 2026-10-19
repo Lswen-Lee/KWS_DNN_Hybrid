@@ -1,7 +1,13 @@
 `timescale 1ns/1ps
 // Protocol unit test: endpoints are explicit stimulus, NOT a DCIM arithmetic
 // model. Full numerical RAM/DCIM/PoT integration is a separate S5-C gate.
-module tb_dcim_layer_controller;
+module tb_dcim_layer_controller #(
+    parameter bit CHECK_RESULT_ORDER = 1'b1
+);
+    // Explicit expected encoding avoids Verilator 5.030 hierarchical enum
+    // constant resolution failures when the DUT becomes parameterized.
+    localparam logic [2:0] S_WRITER=3'd2, S_PATCH=3'd3, S_READER=3'd4,
+                           S_RUN=3'd5, S_DRAIN=3'd6;
     logic clk=0, rst=1;
     always #4 clk=~clk;
     logic cmd_valid=0, cmd_ready, cmd_relu_enable=1;
@@ -25,7 +31,7 @@ module tb_dcim_layer_controller;
     logic [7:0] writer_width, writer_height, writer_x, writer_y;
     logic [5:0] writer_channel;
     logic writer_in_valid;
-    dcim_layer_controller dut (.*);
+    dcim_layer_controller #(.CHECK_RESULT_ORDER(CHECK_RESULT_ORDER)) dut (.*);
 
     integer successes=0, rejections=0, faults=0, resets=0;
     integer patch_commands=0, reader_commands=0, writer_commands=0, activations=0, results=0;
@@ -195,10 +201,10 @@ module tb_dcim_layer_controller;
             tick(1); // PoT becomes empty after the last output handshake.
         end
         case(phase)
-            0: if(dut.state!=dut.START_WRITER) $fatal(1,"V1 missed START_WRITER");
-            1: if(dut.state!=dut.START_PATCH) $fatal(1,"V1 missed START_PATCH");
-            2: if(dut.state!=dut.START_READER) $fatal(1,"V1 missed START_READER");
-            3: if(dut.state!=dut.DRAIN_LAYER) $fatal(1,"V1 missed DRAIN_LAYER");
+            0: if(dut.state!=S_WRITER) $fatal(1,"V1 missed START_WRITER");
+            1: if(dut.state!=S_PATCH) $fatal(1,"V1 missed START_PATCH");
+            2: if(dut.state!=S_READER) $fatal(1,"V1 missed START_READER");
+            3: if(dut.state!=S_DRAIN) $fatal(1,"V1 missed DRAIN_LAYER");
         endcase
         before_a=activations;before_o=results;before_p=patch_commands;
         before_r=reader_commands;before_w=writer_commands;
@@ -236,14 +242,14 @@ module tb_dcim_layer_controller;
             2: begin
                 send_results(1,1);
                 tick(1); // Consume the newly asserted empty boundary.
-                if(dut.state!=dut.DRAIN_LAYER || !dut.writer_done_seen)
+                if(dut.state!=S_DRAIN || !dut.writer_done_seen)
                     $fatal(1,"V2 Writer first done not saved in DRAIN");
             end
             3: if(dut.activation_count!=108 || dut.reader_done_seen)
                    $fatal(1,"V3 activation setup incorrect");
             4: begin
                 send_results(3,0); // No DCIM done: remain RUN with 12 accepted outputs.
-                if(dut.state!=dut.RUN_PATCH || dut.result_count!=12 || dut.dcim_done_seen)
+                if(dut.state!=S_RUN || dut.result_count!=12 || dut.dcim_done_seen)
                     $fatal(1,"V3 result setup incorrect");
             end
         endcase
@@ -303,6 +309,13 @@ module tb_dcim_layer_controller;
             10: dcim_error=1;
         endcase
         tick(1);
+        if (!CHECK_RESULT_ORDER && (kind==3 || kind==4)) begin
+            if (fault || error || results!=before_o+1)
+                $fatal(1,"disabled order check did not accept tag kind=%0d",kind);
+            $display("PASS order-disabled accepted malformed tag kind=%0d (not numerical correctness)",kind);
+            reset_all();
+            return;
+        end
         if(!fault || !error || !dcim_source_error || activations!=before_a || results!=before_o)
             $fatal(1,"fault not rejected before handshake kind=%0d",kind);
         tick(3);
@@ -311,6 +324,7 @@ module tb_dcim_layer_controller;
         faults++;
     endtask
     initial begin
+        $display("CHECK_RESULT_ORDER=%0d",CHECK_RESULT_ORDER);
         run_layer(3,3,1,1); // writer_done concurrent with last accepted result
         run_layer(5,4,2,0); // done before/same/after final post result
         run_layer(30,15,1,0); // complete Conv2 control geometry
@@ -334,7 +348,7 @@ module tb_dcim_layer_controller;
             if(phase>=5) send_input(0);
             if(phase>=6) begin
                 send_results(0,0);tick(1);
-                if(dut.state!=dut.DRAIN_LAYER) $fatal(1,"reset did not reach DRAIN_LAYER");
+                if(dut.state!=S_DRAIN) $fatal(1,"reset did not reach DRAIN_LAYER");
             end
             reset_all();tick(5);
             if(done || busy || writer_cmd_valid || dcim_patch_valid || reader_cmd_valid)

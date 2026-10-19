@@ -1,5 +1,16 @@
 VERILATOR ?= verilator
 .DEFAULT_GOAL := help
+
+.PHONY: test-result-order-experiment lint-order-board
+test-result-order-experiment: | $(BUILD_DIR)
+	@set -e; for mode in 0 1; do \
+	  dir=$(BUILD_DIR)/order_check_$$mode; mkdir -p $$dir; \
+	  $(VERILATOR) --binary -j 4 --timing -Wall -Wno-BLKSEQ -Wno-UNUSEDSIGNAL "-GCHECK_RESULT_ORDER=1'b$$mode" --top-module tb_dcim_layer_controller -Mdir $$dir rtl/control/dcim_layer_controller.sv tb/control/tb_dcim_layer_controller.sv > $$dir/build.log 2>&1 || { tail -30 $$dir/build.log; exit 1; }; \
+	  $$dir/Vtb_dcim_layer_controller > $$dir/test.log 2>&1 || { tail -30 $$dir/test.log; exit 1; }; \
+	  grep '^PASS\|^CHECK_RESULT_ORDER' $$dir/test.log; done
+lint-order-board:
+	@set -e; for mode in 0 1; do \
+	  $(VERILATOR) --lint-only --timing -Wall $(PATH_LINT_FLAGS) -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GCHECK_RESULT_ORDER=1'b$$mode" --top-module kws_board_top $(S6_BOARD_RTL); done
 IVERILOG ?= iverilog
 VVP ?= vvp
 IVL_FLAGS ?=
@@ -117,6 +128,7 @@ test-kws-board-top: generate-kws-board-vectors | $(BUILD_DIR)
 # S5-D1 uses the same RTL list; no separate copy of the engines or PoT.
 S5D_PIPE ?= 0
 S5D_POST ?= 0
+S5D_CHECK_ORDER ?= 1
 S5D_SEED ?= 505
 S5D_HALF_PS ?= 9434
 S5D_PHASE_PS ?= 2700
@@ -124,7 +136,7 @@ S5D_MAX_CYCLES ?= 20000000
 S5D_EXTRA_ARGS ?=
 S5D_TAG ?= normal
 S5D_CASES ?= DELAY_READ_DONE DELAY_ARG_VALID RESET_CLASSIFY RESET_DCIM CLASS_SOURCE_ERROR CLASS_READ_ERROR
-S5D_DIR = $(BUILD_DIR)/inference_p$(S5D_PIPE)_post$(S5D_POST)
+S5D_DIR = $(BUILD_DIR)/inference_p$(S5D_PIPE)_post$(S5D_POST)$(if $(filter 0,$(S5D_CHECK_ORDER)),_unchecked,)
 S5D_EXE = $(S5D_DIR)/Vtb_kws_inference_top
 S5D_ARGS = +VECTORS=$(abspath $(BUILD_DIR)/activation_path_vectors) +SEED=$(S5D_SEED) +CIM_HALF_PS=$(S5D_HALF_PS) +PHASE_PS=$(S5D_PHASE_PS) +MAX_CYCLES=$(S5D_MAX_CYCLES) $(S5D_EXTRA_ARGS)
 .PHONY: build-inference-top test-inference-top test-inference-negative lint-inference-top
@@ -145,7 +157,7 @@ test-inference-class-negative: build-inference-top
 	@ulimit -c 0; if $(S5D_EXE) $(S5D_ARGS) +CORRUPT_CLASS > $(S5D_DIR)/negative_class.log 2>&1; then echo 'FAIL corrupted class expectation accepted'; exit 1; else grep -q 'S5D classification mismatch' $(S5D_DIR)/negative_class.log && echo 'PASS S5D expected classification rejection'; fi
 lint-inference-top: lint-s4
 build-inference-top: generate-activation-path-vectors | $(BUILD_DIR)
-	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$(S5D_PIPE)" "-GPOSTPROCESS_PIPELINED=1'b$(S5D_POST)" --top-module tb_kws_inference_top -Mdir $(S5D_DIR) $(S4_RTL) tb/integration/tb_kws_inference_top.sv
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY "-GRESULT_PIPELINED=1'b$(S5D_PIPE)" "-GPOSTPROCESS_PIPELINED=1'b$(S5D_POST)" "-GCHECK_RESULT_ORDER=1'b$(S5D_CHECK_ORDER)" --top-module tb_kws_inference_top -Mdir $(S5D_DIR) $(S4_RTL) tb/integration/tb_kws_inference_top.sv
 test-inference-top: build-inference-top
 	@log=$(S5D_DIR)/$(S5D_TAG)_seed_$(S5D_SEED)_half_$(S5D_HALF_PS)_phase_$(S5D_PHASE_PS).log; \
 	$(S5D_EXE) $(S5D_ARGS) > $$log 2>&1; status=$$?; \

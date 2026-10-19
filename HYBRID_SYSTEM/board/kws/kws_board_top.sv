@@ -2,6 +2,7 @@
 module kws_board_top #(
     parameter DEMO_FILE="kws_demo.mem",
     parameter bit RESULT_PIPELINED=0, POSTPROCESS_PIPELINED=1,
+    parameter bit CHECK_RESULT_ORDER=1'b1,
     parameter integer RELEASE_CYCLES=2500000,
     parameter integer TIMEOUT_CYCLES=125000000
 ) (
@@ -18,7 +19,8 @@ module kws_board_top #(
     (* MARK_DEBUG="TRUE" *) wire [31:0] run_cycles;
     kws_clock_reset #(.RELEASE_CYCLES(RELEASE_CYCLES)) clocks (.*);
     kws_board_core #(.DEMO_FILE(DEMO_FILE),.RESULT_PIPELINED(RESULT_PIPELINED),
-        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED),.TIMEOUT_CYCLES(TIMEOUT_CYCLES)) core (.*);
+        .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED),.CHECK_RESULT_ORDER(CHECK_RESULT_ORDER),
+        .TIMEOUT_CYCLES(TIMEOUT_CYCLES)) core (.*);
     // Stable status, no pin-level data interface. Optional ILA probes are internal.
     assign led={fail,pass,busy,locked && !rst && !rst_cim};
 endmodule

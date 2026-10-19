@@ -4,7 +4,8 @@
 // Both domains require a common reset event and locally synchronous release.
 module kws_inference_top #(
     parameter bit RESULT_PIPELINED = 1'b0,
-    parameter bit POSTPROCESS_PIPELINED = 1'b1
+    parameter bit POSTPROCESS_PIPELINED = 1'b1,
+    parameter bit CHECK_RESULT_ORDER = 1'b1
 ) (
     input logic clk, rst,
     input logic clk_cim, rst_cim,
@@ -115,7 +116,8 @@ module kws_inference_top #(
         .classify_ready(host_read_ready), .classify_done(classify_done), .classify_error(path_read_error),
         .path_busy(path_busy), .path_fault(path_fault)
     );
-    kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED), .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) path (
+    kws_activation_path #(.RESULT_PIPELINED(RESULT_PIPELINED), .POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED),
+        .CHECK_RESULT_ORDER(CHECK_RESULT_ORDER)) path (
         .clk_cim(clk_cim),.rst_cim(rst_cim),.weight_backend(cfg.backend == BACKEND_DCIM),
         .dcim_cmd_valid(dcim_cmd_valid),.dcim_cmd_ready(dcim_cmd_ready),
         .dcim_layer_id(cfg.layer_id),.dcim_relu_enable(cfg.relu_enable),

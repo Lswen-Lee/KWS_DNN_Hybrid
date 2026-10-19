@@ -3,6 +3,7 @@
 module kws_board_core #(
     parameter DEMO_FILE="kws_demo.mem",
     parameter bit RESULT_PIPELINED=0, POSTPROCESS_PIPELINED=1,
+    parameter bit CHECK_RESULT_ORDER=1'b1,
     parameter integer TIMEOUT_CYCLES=125000000,
     parameter logic [2:0] EXPECTED_CLASS=6,
     parameter logic [7:0] EXPECTED_SCORE=183
@@ -43,7 +44,8 @@ module kws_board_core #(
         .source_enable(source_enable),.busy(busy),.pass(pass),.fail(fail),
         .result_index(result_index),.result_score(result_score),.failure_code(failure_code),.run_cycles(run_cycles)
     );
-    kws_inference_top #(.RESULT_PIPELINED(RESULT_PIPELINED),.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED)) engine (
+    kws_inference_top #(.RESULT_PIPELINED(RESULT_PIPELINED),.POSTPROCESS_PIPELINED(POSTPROCESS_PIPELINED),
+        .CHECK_RESULT_ORDER(CHECK_RESULT_ORDER)) engine (
         .clk(clk),.rst(rst),.clk_cim(clk_cim),.rst_cim(rst_cim),
         .start_valid(start_valid),.start_ready(start_ready),.run_mode(RUN_FULL),
         .busy(),.done(engine_done),.error(engine_error),.error_code(),.current_op(),.op_done(),

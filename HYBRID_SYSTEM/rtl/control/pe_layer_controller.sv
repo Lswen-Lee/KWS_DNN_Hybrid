@@ -5,7 +5,9 @@
 // access while busy. Resident metadata describes SUCCESSFULLY loaded weights.
 // pe_compute_done is RAW engine completion; pe_out_* is AFTER quantization.
 // postprocess_empty includes all accepted in-flight and queued results.
-module pe_layer_controller (
+module pe_layer_controller #(
+    parameter bit CHECK_RESULT_ORDER = 1'b1
+) (
     input logic clk, rst,
     input logic cmd_valid,
     output logic cmd_ready,
@@ -120,7 +122,8 @@ module pe_layer_controller (
                                  result_count + 6'd1 == out_channels_q;
     assign result_bad = compute_phase && pe_out_valid &&
         (pe_out_error || result_count >= out_channels_q ||
-         {1'b0,pe_out_channel_id} != result_count || pe_out_group_last != expected_group_last);
+         (CHECK_RESULT_ORDER &&
+          ({1'b0,pe_out_channel_id} != result_count || pe_out_group_last != expected_group_last)));
     assign replay_bad = state == WAIT_REPLAY && pe_replay_valid &&
         (pe_replay_k != k_q || next_group_base >= out_channels_q ||
          {1'b0,pe_replay_channel_base} != next_group_base);

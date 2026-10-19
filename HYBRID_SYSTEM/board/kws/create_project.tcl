@@ -6,6 +6,8 @@ if {![info exists kws_vectors]} {set kws_vectors [file join $kws_hybrid build kw
 if {![info exists kws_destination]} {set kws_destination [file join $kws_hybrid build kws_board]}
 if {![info exists kws_pipe]} {set kws_pipe 0}
 if {![info exists kws_post]} {set kws_post 1}
+if {![info exists kws_check_result_order]} {set kws_check_result_order 1}
+if {$kws_check_result_order ni {0 1}} {error "kws_check_result_order must be 0 or 1"}
 if {$kws_pipe ni {0 1} || $kws_post ni {0 1}} {error "kws_pipe/kws_post must be 0 or 1"}
 if {[file exists $kws_destination]} {error "Destination exists: open its XPR or choose a new kws_destination"}
 foreach filename {sources.txt manifest.json kws_demo.mem} {
@@ -26,7 +28,7 @@ set_property file_type SystemVerilog [get_files *.sv]
 set_property top kws_board_top [get_filesets sources_1]
 set rom [file normalize [file join $kws_vectors kws_demo.mem]]
 add_files -norecurse $rom
-set_property generic "DEMO_FILE=\"$rom\" RESULT_PIPELINED=$kws_pipe POSTPROCESS_PIPELINED=$kws_post" [get_filesets sources_1]
+set_property generic "DEMO_FILE=\"$rom\" RESULT_PIPELINED=$kws_pipe POSTPROCESS_PIPELINED=$kws_post CHECK_RESULT_ORDER=$kws_check_result_order" [get_filesets sources_1]
 add_files -fileset constrs_1 -norecurse [file join $kws_board_dir kws_board_pynq_z2.xdc]
 set_property strategy {Vivado Synthesis Defaults} [get_runs synth_1]
 set_property strategy {Vivado Implementation Defaults} [get_runs impl_1]
