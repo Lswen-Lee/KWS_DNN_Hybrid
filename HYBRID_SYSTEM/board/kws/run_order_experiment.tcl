@@ -24,9 +24,14 @@ proc oe_wait {run_name} {
     wait_on_run $run_name
     set status [get_property STATUS [get_runs $run_name]]
     puts "ORDER RUN $run_name: $status"
+    # Vivado reports successful routing with negative slack as
+    # "route_design Complete, Failed Timing!". This is NOT a run failure.
+    # Strip only this known suffix; retain all other failure/error checks.
+    set flow_status [string tolower $status]
+    regsub {, failed timing!$} $flow_status {} flow_status
     if {![string match -nocase {*complete*} $status] ||
-        [string match -nocase {*error*} $status] ||
-        [string match -nocase {*fail*} $status] ||
+        [string match {*error*} $flow_status] ||
+        [string match {*fail*} $flow_status] ||
         [get_property PROGRESS [get_runs $run_name]] ne "100%"} {
         error "$run_name did not complete: $status (inspect runme.log)"
     }

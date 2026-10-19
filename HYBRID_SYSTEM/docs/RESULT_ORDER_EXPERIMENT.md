@@ -56,6 +56,10 @@ source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYS
 
 ### 手動GUI流程（沿用）
 
+2026-10-19修正：實際Vivado會回報`route_design Complete, Failed Timing!`。舊版自動腳本把fail字樣一律視為流程失敗，導致已完成routing卻跳過自訂報告。現已只排除這個已知timing失敗後綴，保留真正error/fail及100%進度檢查。mock新增此狀態的回歸並通過；不代表RTL時序已修好。
+
+既有unchecked已完成時不必重新合成：開啟`unchecked/kws_board.xpr`，`open_run impl_1`後source `report_order_experiment.tcl`即可補報告。舊summary.csv的ERROR是當時腳本誤判，該歷史檔不會自動更新，應以補產出的timing報告為準。
+
 先關閉現有 project，兩版使用相同 live RTL、ROM、125/53MHz與Default策略；兩次合成之間不要修改來源。不要直接拿不同策略的舊報告作為唯一baseline。
 
 ```tcl

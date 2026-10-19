@@ -33,7 +33,7 @@ proc get_property {name object} {
         STATUS {
             if {$::inject && $::order_variant eq "checked" && $object eq "synth_1"} {return "synth_design ERROR"}
             if {$object eq "synth_1"} {return "synth_design Complete!"}
-            return "route_design Complete!"
+            return $::route_status
         }
         SLACK {if {$object eq "max"} {return -0.5}; return 0.02}
         default {error "Unexpected property $name"}
@@ -45,12 +45,14 @@ foreach cmd {add_files launch_runs wait_on_run open_run close_design report_util
     proc $cmd {args} {}
 }
 '''
-for inject in (0, 1):
+for inject, route_status in ((0, "route_design Complete!"),
+                             (0, "route_design Complete, Failed Timing!"),
+                             (1, "route_design Complete, Failed Timing!")):
     interp = lib.Tcl_CreateInterp()
     try:
         with tempfile.TemporaryDirectory(prefix="kws-order-tcl-") as temp:
             root = Path(temp) / "experiment"
-            code = mock + f'\nset inject {inject}\nset order_root {{{root}}}\nsource {{{script}}}\n'
+            code = mock + f'\nset inject {inject}\nset route_status {{{route_status}}}\nset order_root {{{root}}}\nsource {{{script}}}\n'
             rc = lib.Tcl_Eval(interp, code.encode())
             result = lib.Tcl_GetStringResult(interp).decode()
             assert (rc != 0) == bool(inject), result
@@ -62,6 +64,6 @@ for inject in (0, 1):
             rc = lib.Tcl_Eval(interp, f'source {{{script}}}'.encode())
             assert rc != 0 and b"Refusing existing" in lib.Tcl_GetStringResult(interp)
             assert (root / "summary.csv").read_text() == csv
-            print(f"PASS Tcl mock inject_synth_failure={inject}; completion != timing pass; no overwrite")
+            print(f"PASS Tcl mock inject_synth_failure={inject}; status={route_status}; no overwrite")
     finally:
         lib.Tcl_DeleteInterp(interp)
