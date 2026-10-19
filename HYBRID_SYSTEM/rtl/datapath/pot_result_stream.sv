@@ -24,20 +24,40 @@ module pot_result_stream #(
     logic [3:0] count;
     logic [2:0] wr_ptr, rd_ptr;
     logic [14:0] fifo [0:7];
+    logic [14:0] output_payload_q;
+    logic output_valid_q;
+    logic [3:0] reserved;
     wire accept = in_valid && in_ready;
     wire pop = out_valid && out_ready;
     wire fifo_push;
     wire [14:0] fifo_payload;
-    assign out_valid = !rst && count!=0;
-    assign {out_error,out_last,out_channel_id,output_uint8}=fifo[rd_ptr];
+    // Moving FIFO data to the output stage does not release a reservation.
+    wire fifo_take = !rst && count!=0 && (!output_valid_q || out_ready);
+    assign out_valid = !rst && output_valid_q;
+    assign {out_error,out_last,out_channel_id,output_uint8}=output_payload_q;
+    assign in_ready = !rst && reserved<8;
+    assign empty = !rst && reserved==0;
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            reserved<=0;
+            output_valid_q<=0;
+        end else begin
+            case({accept,pop})
+                2'b10: reserved<=reserved+1'b1;
+                2'b01: reserved<=reserved-1'b1;
+                default: ;
+            endcase
+            if(fifo_take) begin
+                output_payload_q<=fifo[rd_ptr];
+                output_valid_q<=1;
+            end else if(pop) output_valid_q<=0;
+        end
+    end
     generate if (POSTPROCESS_PIPELINED) begin : g_pipeline
-    logic [3:0] reserved;
-    assign empty = !rst && reserved == 0;
     logic [7:0] tag [0:2]; // error, relu, last, channel
     wire q_valid;
     wire [7:0] q_data;
     wire [7:0] clamped = tag[2][6] && q_data<128 ? 8'd128 : q_data;
-    assign in_ready = !rst && reserved<8;
     assign fifo_push = !rst && q_valid;
     assign fifo_payload = {tag[2][7],tag[2][5:0],clamped};
     requantizer_int32_to_uint8_pot quantizer (
@@ -46,25 +66,16 @@ module pot_result_stream #(
     );
     always_ff @(posedge clk) begin
         if(rst) begin
-            reserved<=0;
             tag[0]<=0; tag[1]<=0; tag[2]<=0;
         end else begin
             tag[0]<={in_error || !shift_valid,relu_enable,in_last,channel_id};
             tag[1]<=tag[0]; tag[2]<=tag[1];
-            case({accept,pop})
-                2'b10: reserved<=reserved+1'b1;
-                2'b01: reserved<=reserved-1'b1;
-                default: ;
-            endcase
         end
     end
     end else begin : g_comb
-        assign empty = !rst && count == 0;
         wire [7:0] q_data;
         wire [7:0] clamped = relu_enable && q_data<128 ? 8'd128 : q_data;
-        // No in-flight results: count alone represents occupied capacity.
-        // Full + pop does not bypass ready; resume accepting on next cycle.
-        assign in_ready = !rst && count<8;
+        // Reservations include FIFO plus output register, even in comb mode.
         assign fifo_push = accept;
         assign fifo_payload = {in_error || !shift_valid,in_last,channel_id,clamped};
         requantizer_int32_to_uint8_pot_comb quantizer (
@@ -76,7 +87,7 @@ module pot_result_stream #(
         if(rst) begin
             count<=0; wr_ptr<=0; rd_ptr<=0;
         end else begin
-            case({fifo_push,pop})
+            case({fifo_push,fifo_take})
                 2'b10: count<=count+1'b1;
                 2'b01: count<=count-1'b1;
                 default: ;
@@ -85,7 +96,7 @@ module pot_result_stream #(
                 fifo[wr_ptr]<=fifo_payload;
                 wr_ptr<=wr_ptr+1'b1;
             end
-            if(pop) rd_ptr<=rd_ptr+1'b1;
+            if(fifo_take) rd_ptr<=rd_ptr+1'b1;
         end
     end
 endmodule

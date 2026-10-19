@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-19使用者核准實作共用PoT輸出暫存級：FIFO後新增payload/valid FF，POST=0/1皆以外部accept/pop維護總容量8筆及empty；保留順序檢查與backend原架構。先前「僅規劃PoT輸出FF」條目為歷史狀態。本次規格、合成入口及待Claude完整驗收見[POT_OUTPUT_REGISTER.md](POT_OUTPUT_REGISTER.md)。
+
 2026-10-19新增`board/kws/run_order_experiment.tcl`自動執行順序檢查checked/unchecked的獨立合成、route與報告；不改RTL或時脈。Tcl mock正常／失敗／防覆寫測試通過，Vivado未執行。操作見RESULT_ORDER_EXPERIMENT.md。
 
 2026-10-19 S6獨立時序實驗：新增預設開啟的CHECK_RESULT_ORDER，僅控制PE/DCIM後處理結果channel/last一致性檢查。保留其他error/count/owner/排空保護，未加入PoT輸出FF，未改FSM週期。提供checked/unchecked正常板級專案入口；不宣稱時序改善。規格、驗證及Claude回傳要求見[順序檢查實驗](RESULT_ORDER_EXPERIMENT.md)。

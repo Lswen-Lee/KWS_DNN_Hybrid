@@ -15,6 +15,7 @@ module tb_pot_result_stream;
     logic held=0,drain=0;
     logic force_stall=1;
     integer simultaneous=0,max_pending=0,full_pop=0;
+    bit continuous=0,stream_started=0;
     function automatic integer model_k(input integer l,c);
         case(l)
             0: return c<12 ? ((c==0 || c==4 || c==10) ? 8 : 9) : -1;
@@ -45,6 +46,9 @@ module tb_pot_result_stream;
         cycles++;
         if(rst) begin sent=0; received=0; held=0; end
         else begin
+            if(continuous && stream_started && received<64 && !out_valid)
+                $fatal(1,"output register inserted a steady-state bubble");
+            if(continuous && out_valid && out_ready) stream_started=1;
             if(empty !== (sent==received)) $fatal(1,"empty misses FIFO/in-flight data");
             if(in_ready !== (sent-received<8)) $fatal(1,"capacity/ready policy mismatch");
             if(sent-received==8 && out_valid && out_ready) full_pop++;
@@ -78,10 +82,9 @@ module tb_pot_result_stream;
     endtask
     initial begin
         repeat(4) @(negedge clk); rst=0;
-        // E0 accepts first input. Comb captures directly into FIFO at E0;
-        // original pipeline must not yet expose an output at this edge.
+        // E0 accepts input; neither mode may bypass the output register.
         send(0); #1;
-        if(out_valid !== !POSTPROCESS_PIPELINED) $fatal(1,"first output latency mismatch");
+        if(out_valid) $fatal(1,"output register was bypassed");
         for(integer i=1;i<8;i++) send(i);
         @(negedge clk); in_valid=0;
         repeat(8) @(negedge clk);
@@ -97,6 +100,23 @@ module tb_pot_result_stream;
         repeat(3) @(negedge clk); rst=0;
         repeat(8) @(negedge clk);
         if(out_valid) $fatal(1,"stale output after reset");
+        // One stalled last item: FIFO empties into output FF, but module
+        // must remain nonempty until the external handshake.
+        send(11);
+        @(negedge clk); in_valid=0;
+        repeat(10) @(negedge clk);
+        if(dut.count!=0 || !out_valid || !out_last || empty)
+            $fatal(1,"output-only last item not included in empty");
+        force_stall=0;drain=1;
+        wait(received==sent);
+        @(negedge clk);rst=1;
+        repeat(3) @(negedge clk);rst=0;
+        continuous=1;stream_started=0;
+        for(integer i=0;i<64;i++) send(i);
+        @(negedge clk);in_valid=0;
+        wait(received==sent);
+        @(negedge clk);continuous=0;rst=1;drain=0;
+        repeat(3) @(negedge clk);rst=0;
         force_stall=0;
         for(integer i=0;i<768;i++) send(i%256);
         @(negedge clk); in_valid=0; drain=1;
