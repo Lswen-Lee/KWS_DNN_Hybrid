@@ -85,6 +85,16 @@ module tb_pot_result_stream;
         // E0 accepts input; neither mode may bypass the output register.
         send(0); #1;
         if(out_valid) $fatal(1,"output register was bypassed");
+        // End this single transfer before waiting for its output latency.
+        @(negedge clk); in_valid=0;
+        // E0 accepts; pipeline: E1 RNE1, E2 round, E3 saturate,
+        // E4 FIFO, E5 output FF. Comb mode still exposes output after E1.
+        for(integer latency=1;latency<=(POSTPROCESS_PIPELINED ? 5 : 1);latency++) begin
+            @(posedge clk); #1;
+            if(out_valid !== (latency==(POSTPROCESS_PIPELINED ? 5 : 1)))
+                $fatal(1,"lookup/RNE latency mismatch POST=%0d edge=%0d",
+                       POSTPROCESS_PIPELINED,latency);
+        end
         for(integer i=1;i<8;i++) send(i);
         @(negedge clk); in_valid=0;
         repeat(8) @(negedge clk);

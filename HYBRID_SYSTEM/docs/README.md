@@ -9,7 +9,7 @@
 3. [完整推論排程](S5D1_FULL_INFERENCE.md) → [分類整合](S5D2_ARGMAX.md) → [板級整合](S6_BOARD_INTEGRATION.md)。
 4. [時序與合成統一入口](TIMING_AND_SYNTHESIS_GUIDE.md)：最新PoT輸出FF、過去實驗、Tcl與結果解讀。
 
-目前RTL已有PoT輸出暫存級（c1ca412），順序檢查預設保留；局部測試與lint通過，該次更動的完整全鏈及實體時序仍待驗證。Backend候選加總暫存級只有討論，**尚未實作**。
+目前RTL已有PoT輸出暫存級（c1ca412），2026-10-20再加入POST=1的scale查表輸入暫存級；順序檢查預設保留。最新版本全鏈及實體時序仍待驗證，操作以時序統一指南為準。Backend候選加總暫存級只有討論，**尚未實作**。
 
 ## 按用途找文件
 

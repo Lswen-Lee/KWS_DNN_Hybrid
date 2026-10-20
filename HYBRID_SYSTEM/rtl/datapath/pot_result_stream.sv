@@ -54,6 +54,12 @@ module pot_result_stream #(
         end
     end
     generate if (POSTPROCESS_PIPELINED) begin : g_pipeline
+    // Lookup and arithmetic are separate timing stages. Capture every field
+    // on the same external handshake; reserved already counts this item.
+    logic input_valid_q;
+    logic signed [31:0] accumulator_q;
+    logic [4:0] shift_q;
+    logic [7:0] input_tag_q;
     logic [7:0] tag [0:2]; // error, relu, last, channel
     wire q_valid;
     wire [7:0] q_data;
@@ -61,14 +67,21 @@ module pot_result_stream #(
     assign fifo_push = !rst && q_valid;
     assign fifo_payload = {tag[2][7],tag[2][5:0],clamped};
     requantizer_int32_to_uint8_pot quantizer (
-        .clk(clk),.rst(rst),.in_valid(accept),.accumulator(accumulator),
-        .shift_amount(shift_amount),.out_valid(q_valid),.output_uint8(q_data)
+        .clk(clk),.rst(rst),.in_valid(input_valid_q),.accumulator(accumulator_q),
+        .shift_amount(shift_q),.out_valid(q_valid),.output_uint8(q_data)
     );
     always_ff @(posedge clk) begin
         if(rst) begin
+            input_valid_q<=0;
             tag[0]<=0; tag[1]<=0; tag[2]<=0;
         end else begin
-            tag[0]<={in_error || !shift_valid,relu_enable,in_last,channel_id};
+            input_valid_q<=accept;
+            if(accept) begin
+                accumulator_q<=accumulator;
+                shift_q<=shift_amount;
+                input_tag_q<={in_error || !shift_valid,relu_enable,in_last,channel_id};
+            end
+            tag[0]<=input_tag_q;
             tag[1]<=tag[0]; tag[2]<=tag[1];
         end
     end

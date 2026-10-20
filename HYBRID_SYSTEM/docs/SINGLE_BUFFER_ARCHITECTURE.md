@@ -2,6 +2,10 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-20使用者核准直接在現有PoT的POST=1加入scale/RNE輸入暫存級，ACC/k/tag/valid同步保存、總容量8不變；POST=0不改，不調整backend與RNE算式。見[POT_OUTPUT_REGISTER更新](POT_OUTPUT_REGISTER.md)，合成入口run_pot_input_pipeline.tcl。此版本全鏈/STA仍待驗證。
+
+本版單測POST=0/1各833筆通過，板級lint通過；首筆延遲多一拍、連續輸出II=1、容量與reset已檢查。完整測試範圍及Claude重跑命令見上述文件。
+
 ## 現行閱讀規則（2026-10-19文件整理）
 
 本檔保留階段歷史作為決策紀錄，不刪除舊驗證證據。**下方同日與較早的「尚未實作／僅規劃」不是現在的待辦清單。** 現行閱讀入口見[README](README.md)，合成操作見[統一指南](TIMING_AND_SYNTHESIS_GUIDE.md)。
