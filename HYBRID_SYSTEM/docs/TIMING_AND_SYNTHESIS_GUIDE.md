@@ -4,6 +4,8 @@
 
 ## 現行選擇
 
+最新實驗：保留下面PoT輸入pipeline，但移除backend的跨group加總溢位檢查。新指令與Claude驗證規格見[BACKEND_SUM_OVERFLOW_REVIEW](BACKEND_SUM_OVERFLOW_REVIEW.md)。基準為`kws_pot_input_run01`：WNS -0.792ns、TNS -149.289ns、660失敗端點。尚未量測本次變更的實體結果。下面指令為前一次實驗入口，讀取live RTL，不可用它重跑來假定還原舊RTL。
+
 2026-10-20目前RTL包含Writer pipeline、共用PoT輸出FF及POST=1的scale查表輸入FF，順序檢查預設開啟。**下一個要合成的是PoT輸入pipeline checked配置**，不是舊unchecked或只有輸出FF的網表。
 
 ```tcl

@@ -64,7 +64,7 @@ $$U=odd+(even\ll4)$$
 
 $$P=U-128\Sigma A_u-128\Sigma W_u+16384\times32.$$
 
-12份signed32 ACC各自累加四個P，等於 `Σ(Au−128)Ws`。33-bit加法檢查signed overflow，任何修正/累加overflow進FAULT。輸出raw INT32，不做量化或ReLU。
+12份signed32 ACC各自累加四個P，等於 `Σ(Au−128)Ws`。2026-10-20起保留33-bit加法與低32-bit寫回，但移除跨group加總overflow的FAULT條件；只有offset correction的overflow仍進FAULT。合法K=108、INT8權重與中心化activation的任何部分和絕對值不超過1,769,472，因此可由INT32表示。異常資料若造成加總超界會截取低32-bit，不再由本項檢查報錯。輸出raw INT32，不做量化或ReLU。驗證交接見[此次修改](BACKEND_SUM_OVERFLOW_REVIEW.md)。
 
 ## 5. 九個主要狀態
 
@@ -95,7 +95,7 @@ flowchart TD
  CW -->|四組完成| E[EMIT]
  E -->|第12筆握手| I
  WW -->|error| F[FAULT]
- CW -->|error/缺data/overflow| F
+ CW -->|error/缺data/correction overflow| F
 ```
 
 減少的是獨立INIT/NEXT/DONE狀態；C_WAIT旗標仍是控制狀態，不因enum少就保證省FF。沒有未精簡版本的實測對照，因此不宣稱特定面積或加速率。既有修正器無ready，C_WAIT保證逐筆接收它的valid。

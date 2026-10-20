@@ -112,7 +112,7 @@ stateDiagram-v2
   EMIT --> EMIT: 依ready輸出filter
   EMIT --> IDLE: 第12筆握手，patch_done
   W_WAIT --> FAULT: 回應錯誤
-  C_WAIT --> FAULT: 回應錯誤／缺資料／溢位
+  C_WAIT --> FAULT: 回應錯誤／缺資料／correction溢位（不含跨group加總溢位）
   FAULT --> IDLE: 共同reset
 ```
 

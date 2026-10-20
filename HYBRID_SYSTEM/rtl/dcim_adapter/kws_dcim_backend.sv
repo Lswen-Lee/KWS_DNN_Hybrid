@@ -184,7 +184,11 @@ module kws_dcim_backend (
                             end else correction_pending <= 1;
                         end
                         if (correction_pending && correction_valid) begin
-                            if (correction_overflow || extended_acc[32] != extended_acc[31]) begin
+                            // Legal K=108 INT8 dot products fit INT32:
+                            // abs(partial sum) <= 108*128*128 = 1769472.
+                            // Keep correction faults, but do not gate tile/state
+                            // updates with the cross-group adder overflow bit.
+                            if (correction_overflow) begin
                                 state <= FAULT; weights_ready <= 0;
                             end else begin
                                 partial_acc[pair_index] <= extended_acc[31:0];
