@@ -1,5 +1,7 @@
 # 不改RTL的實體實驗與PoT輸出邊界規劃
 
+> 歷史實驗／提案。本頁「PoT輸出FF尚未實作」描述的是當時狀態；目前已實作，請見[PoT輸出規格](POT_OUTPUT_REGISTER.md)。操作選擇以[統一時序指南](TIMING_AND_SYNTHESIS_GUIDE.md)為準，以下保留原始計畫與證據。
+
 ## 本次範圍
 
 新增 `board/kws/run_physical_experiment.tcl`。沒有修改RTL、XDC、pre_opt或reset例外；PoT output register僅規劃，尚未實作。未執行Vivado，不能宣稱directive或路徑在使用者環境已實測通過。

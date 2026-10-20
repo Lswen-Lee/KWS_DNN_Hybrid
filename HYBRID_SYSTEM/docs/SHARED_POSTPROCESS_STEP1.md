@@ -1,5 +1,7 @@
 # 共用後處理第一步：PE raw engine＋外置 PoT
 
+> 歷史第一步：現在DCIM已接入共享路徑，見[Step 2](SHARED_POSTPROCESS_STEP2.md)。本頁count/empty與延遲描述已由[PoT輸出暫存級](POT_OUTPUT_REGISTER.md)更新；原測試數字只屬當時版本。
+
 使用者已授權改變原先保留PE內部後處理的整合邊界。本次只完成第一步；DCIM尚未接入共享path、不新增DCIM owner、不開放FULL。外部path介面、RAM配置、算術及資料格式不變。
 
 ## 架構
