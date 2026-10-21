@@ -4,6 +4,33 @@
 
 ## 現行選擇
 
+### 2026-10-21：不改RTL，四種實體策略比較
+
+Docker沒有Vivado，尚未執行實體實驗。最新已分析基準`kws_backend_no_sum_run01`為WNS -0.169ns、TNS -1.281ns、14失敗端點。先保留RTL、125/53MHz及所有原約束，使用同一次synth_1網表比較布局繞線；這不是四次不同的synthesis策略，也不保證時序通過。
+
+```tcl
+# 關閉目前專案；必須使用尚不存在的目錄。
+set kws_destination {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/build/kws_strategy_run01}
+set px_jobs 4
+set px_variants {baseline fanout explore aggressive}
+source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/board/kws/run_physical_experiment.tcl}
+```
+
+| 策略 | opt/place | post-place phys_opt | route |
+|---|---|---|---|
+| baseline | Default/Default | Default | Default |
+| fanout | Default/Default | AggressiveFanoutOpt | Default |
+| explore | Explore/Explore | Explore | Explore |
+| aggressive | Explore/Explore | AggressiveExplore | NoTimingRelaxation |
+
+固定PIPE=1、POST=1、CHECK_RESULT_ORDER=1，正常非OOC；不新增false path/multicycle、不降低頻率、不移除DONT_TOUCH。四個run共用synth_1，依序執行，失敗記錄`reports/<variant>_error.txt`並繼續。負slack的`Complete, Failed Timing!`仍產報告；真正工具失敗才列ERROR。新目錄不得已存在，使用既有board vectors，來源為live RTL，跑完前勿改RTL/ROM/XDC/hooks。
+
+結果：`reports/summary.csv`列WNS/TNS、setup失敗端點、WHS/THS、hold失敗端點、LUT/FF與setup_hold_status；各`reports/<variant>/`有timing、資源、CDC、DRC、methodology、route與DCP。summary解析不到的欄位標NA，不冒充PASS。優先比較同批baseline；舊報告只供參考。PASS僅setup/hold，仍需檢查pulse width、未約束路徑與CDC/reset。沒有產生bitstream。
+
+`python3 board/kws/test_physical_experiment_tcl.py`通過正常及注入失敗兩案例：同一次synthesis、四策略、Failed Timing仍寫CSV、單策略失敗繼續與防覆寫。此為Tcl8.6 mock，不是Vivado API、合成或STA驗證。日誌`/tmp/kws-physical-mock.log`。官方2023.2 directive參考：[AMD UG904](https://docs.amd.com/r/2023.2-English/ug904-vivado-implementation/Directives-Used-by-phys_opt_design-and-route_design-in-Implementation-Strategies)。
+
+### 前一輪RTL實驗
+
 最新實驗：保留下面PoT輸入pipeline，但移除backend的跨group加總溢位檢查。新指令與Claude驗證規格見[BACKEND_SUM_OVERFLOW_REVIEW](BACKEND_SUM_OVERFLOW_REVIEW.md)。基準為`kws_pot_input_run01`：WNS -0.792ns、TNS -149.289ns、660失敗端點。尚未量測本次變更的實體結果。下面指令為前一次實驗入口，讀取live RTL，不可用它重跑來假定還原舊RTL。
 
 2026-10-20目前RTL包含Writer pipeline、共用PoT輸出FF及POST=1的scale查表輸入FF，順序檢查預設開啟。**下一個要合成的是PoT輸入pipeline checked配置**，不是舊unchecked或只有輸出FF的網表。

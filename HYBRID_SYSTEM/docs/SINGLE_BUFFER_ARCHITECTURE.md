@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-21：保留目前RTL，新增四策略實體比較（baseline/fanout/explore/aggressive，共用一次synthesis），固定PIPE/POST/CHECK=1及125/53MHz。更新既有run_physical_experiment.tcl與CSV/錯誤處理；mock通過，Docker無Vivado，實際STA尚待Windows執行。指令見[TIMING_AND_SYNTHESIS_GUIDE](TIMING_AND_SYNTHESIS_GUIDE.md)。未實作前述loader簡化或其他RTL提案。
+
 2026-10-20使用者核准移除backend跨group加總溢位FAULT條件，保留加法、correction_overflow及其他保護；正常狀態與cycle不變，不新增backend pipeline。前提為固定K=108的合法INT8內積，部分和絕對值上界1,769,472。模擬/lint交Claude，Vivado交使用者，均尚未執行；見[修改與驗證交接](BACKEND_SUM_OVERFLOW_REVIEW.md)。PoT輸入pipeline保留。
 
 2026-10-20使用者核准直接在現有PoT的POST=1加入scale/RNE輸入暫存級，ACC/k/tag/valid同步保存、總容量8不變；POST=0不改，不調整backend與RNE算式。見[POT_OUTPUT_REGISTER更新](POT_OUTPUT_REGISTER.md)，合成入口run_pot_input_pipeline.tcl。此版本全鏈/STA仍待驗證。
