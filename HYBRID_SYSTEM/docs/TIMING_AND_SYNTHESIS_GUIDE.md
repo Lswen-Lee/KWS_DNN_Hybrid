@@ -4,6 +4,8 @@
 
 ## 現行選擇
 
+已通過基準：`kws_postroute_run02/after`（WNS +0.040ns，setup/hold/pulse-width通過）；完整保存位置與來源版本限制見[TIMING_PASS_BASELINE](TIMING_PASS_BASELINE.md)。以下保留歷次實驗操作，勿將後續輸出寫回基準封存。
+
 ### 2026-10-21：aggressive routed DCP 的 post-route 實驗
 
 空白GUI啟動修正：不再直接呼叫可能要求project context的`get_designs -quiet`，改用get_projects及catch保護的current_design探測；之後由open_checkpoint建立context，不需要create_project。新增mock覆蓋無專案查詢拋錯、已有project或standalone design拒絕、正常/失敗流程。`/tmp/kws-postroute-empty-gui.log`通過；Windows實測仍待確認。若仍報錯，請用`catch {source ...} msg opts`後輸出`dict get $opts -errorinfo`定位實際行，不憑console最後echo行判定。

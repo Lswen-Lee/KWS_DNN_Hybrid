@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+時序通過基準已選定為kws_postroute_run02/after，125/53MHz、WNS +0.040ns、WHS +0.070ns，setup/hold/pulse-width違反均0。保存到build/baselines/kws_125m_53m_pass_20261021；來源版本、現有dirty差異及約束一併本機封存，來源重建限制與剩餘CDC/reset風險見[TIMING_PASS_BASELINE](TIMING_PASS_BASELINE.md)。不代表已完成板測。
+
 2026-10-21 post-route啟動相容性修正：空白GUI下不直接使用get_designs，改為受catch保護的current_design探測。mock覆蓋無專案查詢拋錯及既有設計拒絕並通過；尚未在Windows Vivado複驗。不修改RTL、DCP或約束。
 
 2026-10-21：使用者選擇不改RTL的post-route實驗。新增run_postroute_experiment.tcl，直接從四策略aggressive的routed.dcp執行Explore phys_opt與NoTimingRelaxation route，保留原DCP約束與檔案，輸出before/after比較。原aggressive仍差0.010ns；mock通過，Windows Vivado實驗待執行。詳[TIMING_AND_SYNTHESIS_GUIDE](TIMING_AND_SYNTHESIS_GUIDE.md)。不代表已採用任何新RTL提案。
