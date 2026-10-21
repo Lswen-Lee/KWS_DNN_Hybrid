@@ -4,6 +4,23 @@
 
 ## 現行選擇
 
+### 2026-10-21：aggressive routed DCP 的 post-route 實驗
+
+四策略結果：baseline/fanout WNS=-0.169ns、explore=-0.232ns；aggressive=-0.010ns、TNS=-0.010ns、1失敗端點、WHS=+0.070ns。以下不重跑synthesis、不讀live RTL/XDC，直接保留DCP中的約束。來源固定，不覆寫舊結果。
+
+```tcl
+# 先關閉專案與設計；輸出目錄不得已存在。
+set pr_input {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/build/kws_strategy_run01/reports/aggressive/routed.dcp}
+set pr_output {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/build/kws_postroute_run01}
+source {C:/Windows/System32/aoc-workspace/projects/KWS/KWS_DNN_Hybrid/HYBRID_SYSTEM/board/kws/run_postroute_experiment.tcl}
+```
+
+流程：確認板級ports、原DCP完整繞線與125/53MHz時脈→before報告→`phys_opt_design -directive Explore`→`route_design -directive NoTimingRelaxation`→after報告及`after/routed.dcp`。不重新place，不添加false path/multicycle，不產bitstream。此實驗包含phys_opt及後續route，不能把變化只歸因於phys_opt。官方[UG904](https://docs.amd.com/r/2023.2-English/ug904-vivado-implementation/Directives-Used-by-phys_opt_design-and-route_design-in-Implementation-Strategies)列有post-route Explore。
+
+根目錄`summary.csv`比較WNS/TNS、失敗端點、hold與LUT/FF，`before/after`保留CDC、DRC、methodology、route、clock、exceptions及時序報告；真實命令失敗會寫error.txt並停止，不把舊結果當新結果。需確認after完整繞線、無錯誤及pulse width/未約束路徑，setup_hold_status不是完整簽核。若變差，保留原aggressive結果，不覆寫也不自動選用。實驗結束關閉design；可用open_checkpoint開啟新DCP查看。
+
+`python3 board/kws/test_postroute_experiment_tcl.py` mock正常及注入phys失敗通過，包含執行順序、CSV、保留來源與防覆寫；日誌`/tmp/kws-postroute-mock.log`。Docker無Vivado，實際post-route尚未執行。mock不代表Vivado API或STA驗證。
+
 ### 2026-10-21：不改RTL，四種實體策略比較
 
 Docker沒有Vivado，尚未執行實體實驗。最新已分析基準`kws_backend_no_sum_run01`為WNS -0.169ns、TNS -1.281ns、14失敗端點。先保留RTL、125/53MHz及所有原約束，使用同一次synth_1網表比較布局繞線；這不是四次不同的synthesis策略，也不保證時序通過。
