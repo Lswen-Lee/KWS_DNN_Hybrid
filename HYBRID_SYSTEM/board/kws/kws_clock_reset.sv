@@ -36,24 +36,33 @@ module kws_clock_reset #(parameter integer RELEASE_CYCLES=2500000) (
         lock_sync<={lock_sync[0],locked};
     end
     wire startup_reset=reset_button || !locked;
+    // Only this small synchronizer sees asynchronous startup reset.
+    // The counter below uses synchronous reset with synchronized release.
+    (* ASYNC_REG="TRUE" *) logic [1:0] startup_reset_sync=2'b11;
     always_ff @(posedge clk or posedge startup_reset) begin
-        if(startup_reset) begin release_count<=0; release_ready<=0; end
-        else
-        if(button_sync[1] || !lock_sync[1]) begin release_count<=0; release_ready<=0; end
+        if(startup_reset) startup_reset_sync<=2'b11;
+        else startup_reset_sync<={startup_reset_sync[0],1'b0};
+    end
+    always_ff @(posedge clk) begin
+        if(startup_reset_sync[1] || button_sync[1] || !lock_sync[1]) begin release_count<=0; release_ready<=0; end
         else if(!release_ready) begin
             if(release_count==CW'(RELEASE_CYCLES-1)) release_ready<=1;
             else release_count<=release_count+1'b1;
         end
     end
-    wire common_reset=reset_button || !locked || !release_ready;
+    // release_ready is now DATA into stage zero, never combinational logic
+    // on the asynchronous reset tree. Each domain shifts four clean stages.
+    // Stretch even a sub-cycle fault until the system counter has cleared
+    // release_ready. Raw reset alone could shift an old ready=1 after a pulse.
+    wire common_reset=startup_reset_sync[1];
     (* ASYNC_REG="TRUE" *) logic [3:0] sys_reset_sync=4'b1111;
     (* ASYNC_REG="TRUE" *) logic [3:0] cim_reset_sync=4'b1111;
     always_ff @(posedge clk or posedge common_reset)
         if(common_reset) sys_reset_sync<=4'b1111;
-        else sys_reset_sync<={sys_reset_sync[2:0],1'b0};
+        else sys_reset_sync<={sys_reset_sync[2:0],!release_ready};
     always_ff @(posedge clk_cim or posedge common_reset)
         if(common_reset) cim_reset_sync<=4'b1111;
-        else cim_reset_sync<={cim_reset_sync[2:0],1'b0};
+        else cim_reset_sync<={cim_reset_sync[2:0],!release_ready};
     assign rst=sys_reset_sync[3];
     assign rst_cim=cim_reset_sync[3];
 endmodule

@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-22：僅修改板級kws_clock_reset，加入startup reset同步/延長級、release_count改同步清除、release_ready改走兩域四級同步器資料端；CIM內部reset與約束不改。獨立reset TB通過（含短脈波、失鎖、停CIM clock），全鏈與新STA待驗證；詳[BOARD_RESET_REVISION](BOARD_RESET_REVISION.md)。舊通過DCP仍保存，但不代表新RTL時序通過。
+
 時序通過基準已選定為kws_postroute_run02/after，125/53MHz、WNS +0.040ns、WHS +0.070ns，setup/hold/pulse-width違反均0。保存到build/baselines/kws_125m_53m_pass_20261021；來源版本、現有dirty差異及約束一併本機封存，來源重建限制與剩餘CDC/reset風險見[TIMING_PASS_BASELINE](TIMING_PASS_BASELINE.md)。不代表已完成板測。
 
 2026-10-21 post-route啟動相容性修正：空白GUI下不直接使用get_designs，改為受catch保護的current_design探測。mock覆蓋無專案查詢拋錯及既有設計拒絕並通過；尚未在Windows Vivado複驗。不修改RTL、DCP或約束。

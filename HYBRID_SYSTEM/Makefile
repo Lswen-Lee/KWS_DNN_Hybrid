@@ -104,6 +104,10 @@ test-kws-board-vectors: generate-kws-board-vectors
 	python3 scripts/test_kws_board_vectors.py
 lint-kws-board:
 	$(VERILATOR) --lint-only --timing -Wall $(PATH_LINT_FLAGS) -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module kws_board_top $(S6_BOARD_RTL)
+.PHONY: test-kws-clock-reset
+test-kws-clock-reset: | $(BUILD_DIR)
+	$(VERILATOR) --binary -j 4 --timing -Wall $(PATH_LINT_FLAGS) -Wno-BLKSEQ -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY --top-module tb_kws_clock_reset -Mdir $(BUILD_DIR)/s6_clock_reset board/kws/kws_clock_reset.sv tb/board/tb_kws_clock_reset.sv
+	$(BUILD_DIR)/s6_clock_reset/Vtb_kws_clock_reset
 test-kws-board-units: generate-kws-board-vectors | $(BUILD_DIR)
 	@set -e; for unit in source self_test clock_reset; do \
 	case $$unit in source) top=tb_kws_demo_source; rtl='$(S6_SOURCE_RTL)';; self_test) top=tb_kws_board_self_test; rtl=board/kws/kws_board_self_test.sv;; clock_reset) top=tb_kws_clock_reset; rtl=board/kws/kws_clock_reset.sv;; esac; \
