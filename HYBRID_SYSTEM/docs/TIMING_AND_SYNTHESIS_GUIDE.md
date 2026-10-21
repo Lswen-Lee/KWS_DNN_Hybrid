@@ -6,6 +6,8 @@
 
 ### 2026-10-21：aggressive routed DCP 的 post-route 實驗
 
+空白GUI啟動修正：不再直接呼叫可能要求project context的`get_designs -quiet`，改用get_projects及catch保護的current_design探測；之後由open_checkpoint建立context，不需要create_project。新增mock覆蓋無專案查詢拋錯、已有project或standalone design拒絕、正常/失敗流程。`/tmp/kws-postroute-empty-gui.log`通過；Windows實測仍待確認。若仍報錯，請用`catch {source ...} msg opts`後輸出`dict get $opts -errorinfo`定位實際行，不憑console最後echo行判定。
+
 四策略結果：baseline/fanout WNS=-0.169ns、explore=-0.232ns；aggressive=-0.010ns、TNS=-0.010ns、1失敗端點、WHS=+0.070ns。以下不重跑synthesis、不讀live RTL/XDC，直接保留DCP中的約束。來源固定，不覆寫舊結果。
 
 ```tcl

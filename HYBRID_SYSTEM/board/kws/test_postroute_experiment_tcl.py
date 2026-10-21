@@ -12,8 +12,12 @@ lib.Tcl_GetStringResult.restype = ctypes.c_char_p
 lib.Tcl_DeleteInterp.argtypes = [ctypes.c_void_p]
 script = Path(__file__).with_name("run_postroute_experiment.tcl").resolve()
 mock = r'''
-proc get_projects {args} {return {}}
-proc get_designs {args} {return {}}
+proc get_projects {args} {return $::open_project}
+proc get_designs {args} {error "No open project. Please create or open a project before executing this command."}
+proc current_design {args} {
+ if {$::open_design} {return standalone_design}
+ error "No open project. Please create or open a project before executing this command."
+}
 proc get_ports {args} {if {[lindex $args end] eq {led[*]}} {return {l0 l1 l2 l3}}; return port}
 proc get_clocks {args} {return [lindex $args end]}
 proc get_property {prop obj} {if {$obj eq "sys_clk_125m"} {return 8.0}; return 18.868}
@@ -51,10 +55,18 @@ for inject in (0, 1):
             # The mock input is created by Tcl; production script only reads it.
             code = mock + f'''
 set inject {inject}
+set open_project {{}}
+set open_design 0
 set calls {{}}
 set pr_input {{{root / 'input.dcp'}}}
 set pr_output {{{root / 'result'}}}
 set f [open $pr_input w]; puts $f original; close $f
+set open_project project
+if {{![catch {{source {{{script}}}}} msg] || $msg ne "Close the current project/design first"}} {{error "open project not rejected"}}
+set open_project {{}}
+set open_design 1
+if {{![catch {{source {{{script}}}}} msg] || $msg ne "Close the current project/design first"}} {{error "open design not rejected"}}
+set open_design 0
 set rc [catch {{source {{{script}}}}} msg]
 if {{$rc != {inject}}} {{error "unexpected result $msg"}}
 if {{!$inject && $calls ne {{open phys route write}}}} {{error "wrong sequence $calls"}}

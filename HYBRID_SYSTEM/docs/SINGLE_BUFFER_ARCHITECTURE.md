@@ -2,6 +2,8 @@
 
 基準版本：v1.0（2026-10-03）
 
+2026-10-21 post-route啟動相容性修正：空白GUI下不直接使用get_designs，改為受catch保護的current_design探測。mock覆蓋無專案查詢拋錯及既有設計拒絕並通過；尚未在Windows Vivado複驗。不修改RTL、DCP或約束。
+
 2026-10-21：使用者選擇不改RTL的post-route實驗。新增run_postroute_experiment.tcl，直接從四策略aggressive的routed.dcp執行Explore phys_opt與NoTimingRelaxation route，保留原DCP約束與檔案，輸出before/after比較。原aggressive仍差0.010ns；mock通過，Windows Vivado實驗待執行。詳[TIMING_AND_SYNTHESIS_GUIDE](TIMING_AND_SYNTHESIS_GUIDE.md)。不代表已採用任何新RTL提案。
 
 2026-10-21：保留目前RTL，新增四策略實體比較（baseline/fanout/explore/aggressive，共用一次synthesis），固定PIPE/POST/CHECK=1及125/53MHz。更新既有run_physical_experiment.tcl與CSV/錯誤處理；mock通過，Docker無Vivado，實際STA尚待Windows執行。指令見[TIMING_AND_SYNTHESIS_GUIDE](TIMING_AND_SYNTHESIS_GUIDE.md)。未實作前述loader簡化或其他RTL提案。

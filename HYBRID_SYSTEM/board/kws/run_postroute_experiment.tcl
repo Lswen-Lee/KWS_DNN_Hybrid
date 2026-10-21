@@ -1,7 +1,13 @@
 # Vivado 2023.2. Open an existing routed DCP, never re-read RTL/XDC.
 # Refuse open projects/designs and existing output directories.
 set pr_dir [file normalize [file dirname [info script]]]
-if {[llength [get_projects -quiet]] || [llength [get_designs -quiet]]} {
+if {[llength [get_projects -quiet]]} {
+    error "Close the current project/design first"
+}
+# get_designs can throw 'No open project' even with -quiet in an empty GUI.
+# Probe the current design defensively; open_checkpoint below creates context.
+set pr_active_design {}
+if {![catch {current_design -quiet} pr_active_design] && $pr_active_design ne ""} {
     error "Close the current project/design first"
 }
 if {![info exists pr_input]} {
