@@ -22,4 +22,26 @@ if {[llength $reset_pins]} {set_false_path -to $reset_pins}
 # MMCM LOCKED is asynchronous to system logic; synchronize its first stage.
 set lock_meta [kws_require [get_cells -quiet -hier -regexp {.*clocks/lock_sync_reg\[0\]}] lock_meta]
 set_false_path -to [get_pins -of_objects $lock_meta -filter {REF_PIN_NAME == D}]
+# Board reset release is a stable level crossing into a four-stage synchronizer.
+# Exempt ONLY its source Q -> CIM stage-zero D; all later stages and the
+# system-clock reset chain remain timed. Fail closed on renamed/replicated cells.
+proc kws_exactly_one {objects label} {
+    if {[llength $objects] != 1} {
+        error "KWS expected exactly one $label; matched [llength $objects]: $objects"
+    }
+    return $objects
+}
+set reset_release_src [kws_exactly_one [get_cells -quiet -hier -regexp {(^|.*/)clocks/release_ready_reg$}] reset_release_source]
+set reset_release_dst [kws_exactly_one [get_cells -quiet -hier -regexp {(^|.*/)clocks/cim_reset_sync_reg\[0\]$}] reset_release_stage_zero]
+if {![string equal -nocase [get_property ASYNC_REG $reset_release_dst] TRUE]} {
+    error "KWS CIM reset stage zero must retain ASYNC_REG=TRUE"
+}
+set reset_release_q [kws_exactly_one [get_pins -quiet -of_objects $reset_release_src -filter {REF_PIN_NAME == Q}] reset_release_Q]
+set reset_release_d [kws_exactly_one [get_pins -quiet -of_objects $reset_release_dst -filter {REF_PIN_NAME == D}] reset_release_D]
+set reset_release_fanin [all_fanin -flat -startpoints_only -to $reset_release_d]
+if {[lsearch -exact [get_property NAME $reset_release_fanin] [get_property NAME $reset_release_q]] < 0} {
+    error "KWS reset release Q is not a startpoint of CIM stage-zero D"
+}
+set_false_path -from $reset_release_q -to $reset_release_d
+puts "KWS RESET CDC: from=[get_property NAME $reset_release_q] to=[get_property NAME $reset_release_d]; source=1 destination=1; stage1..3 remain timed"
 puts "KWS CDC constraints applied: command regs=[llength $cmd], response regs=[llength $rsp]. Review report_cdc and exceptions."

@@ -49,4 +49,20 @@ release_ready只進入兩域四級同步器第一級D，其他級逐級移動；
 
 ## 重新合成
 
+### 後續補齊板級 CDC 約束
+
+`kws_reset_strategy_run01` 四種策略完成但未通過時序。共同最差路徑為
+`release_ready_reg/Q -> cim_reset_sync_reg[0]/D`，WNS=-8.109ns。
+本次另修改 `board/kws/pre_opt.tcl`：只對這條同步器入口設定 source-Q 到 destination-D 的 false path。
+此為前述「XDC/pre_opt 不改」初版範圍的後續補正，不改任何 RTL 或 CIM 內部 reset。
+
+hook 檢查來源與目的 cell、Q/D pin 各恰好一個、目的 ASYNC_REG=TRUE，並用 all_fanin 核對來源 Q 確實連到第一級 D。
+缺少、重複或連接不符立即停止。實際解析的腳位名稱以 `KWS RESET CDC:` 印入 implementation runme.log。
+只解除第一級的跨域邊緣關係要求；同步器後續級、系統域 reset chain 與 mailbox 資料約束不變。
+這不證明 reset 毛刺、亞穩態或 recovery/removal 已完成簽核；既有 CLR/PRE 廣泛例外仍需另行審核。
+
+`python3 board/kws/test_reset_constraint_tcl.py` 驗證正常入口範圍，以及缺少、重複、缺 ASYNC_REG、來源未連接四種拒絕情況。
+這是 Tcl mock，不是 Windows Vivado 實際網表驗證。實際命中需執行新 implementation 後查閱 log 與 exceptions.rpt。
+請使用新目錄 `kws_reset_cdc_strategy_run01` 重跑 baseline/aggressive；不能假定其餘 -2ns 域內違規會隨之消失。
+
 使用現有四策略腳本及全新目錄，例如kws_reset_strategy_run01，設定px_variants為{aggressive}即可先跑一版。需重新synthesis，不能開啟舊routed.dcp作post-route來測新RTL。核對新的CDC-7/10、LUTAR-1、setup/hold、reset例外範圍；不能預先承諾警告全消失或125MHz繼續通過。
