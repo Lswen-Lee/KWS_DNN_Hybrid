@@ -23,7 +23,10 @@ proc get_cells {args} {
     return generic
 }
 proc get_pins {args} {
-    if {[lsearch -exact $args src] >= 0} {return clocks/release_ready_reg/Q}
+    if {[lsearch -exact $args src] >= 0} {
+        if {[lindex $args end] eq {REF_PIN_NAME == C}} {return clocks/release_ready_reg/C}
+        return clocks/release_ready_reg/Q
+    }
     if {[lsearch -exact $args dst] >= 0} {return {clocks/cim_reset_sync_reg[0]/D}}
     return pin
 }
@@ -45,7 +48,10 @@ proc all_fanin {args} {
     if {[lsearch -exact $args -startpoints_only] >= 0} {return clocks/release_ready_reg/C}
     return {clocks/cim_reset_sync_reg[0]/D clocks/sys_reset_sync[0]_i_1/O clocks/sys_reset_sync[0]_i_1/I0 clocks/release_ready_reg/Q clocks/release_ready_reg/C}
 }
-proc set_false_path {args} {lappend ::exceptions $args}
+proc set_false_path {args} {
+    if {[lsearch -exact $args clocks/release_ready_reg/Q] >= 0} {error "invalid Q startpoint"}
+    lappend ::exceptions $args
+}
 proc set_max_delay {args} {}
 '''
 for case in ("normal", "numeric_true", "missing", "duplicate", "no_async",
@@ -58,7 +64,7 @@ for case in ("normal", "numeric_true", "missing", "duplicate", "no_async",
         if case in ("normal", "numeric_true"):
             assert rc == 0, message
             check = r'''
-if {[lindex $exceptions end] ne {-from clocks/release_ready_reg/Q -to {clocks/cim_reset_sync_reg[0]/D}}} {
+if {[lindex $exceptions end] ne {-from clocks/release_ready_reg/C -to {clocks/cim_reset_sync_reg[0]/D}}} {
     error "exception scope mismatch"
 }
 '''

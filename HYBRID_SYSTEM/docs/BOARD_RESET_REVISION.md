@@ -75,4 +75,9 @@ hook 檢查來源與目的 cell、Q/D pin 各恰好一個、目的 ASYNC_REG=TRU
 例外仍僅為來源 Q 到第一級 D，沒有擴大到 clock 或後續同步級。mock 已依實測清單重現 C-only startpoint，九項測試通過；實際 implementation 待重新執行。
 RTL/synthesis 未變，可沿用成功的 synth_1，僅 reset_run impl_baseline/impl_aggressive 並重跑；此手動重跑不會自動刷新外層實驗腳本的 summary.csv。
 
+最終約束修正：使用者實測 Constraints 18-402/18-513 證實 Q 不可作 set_false_path 起點。
+上述 Q→D 的寫法已被取代：現在用同一顆 release_ready_reg 的 C pin 到 cim_reset_sync_reg[0]/D；Q 僅用於完整 fan-in 接線檢查。
+這不是 get_clocks 的全域例外，只豁免該來源暫存器到該目的第一級的路徑，其他同步級維持計時。
+mock 新增拒絕 Q 作 exception 起點，九項通過；仍須 Vivado 實際確認 exceptions 與時序報告，不將 mock 視為 STA 通過。
+
 使用現有四策略腳本及全新目錄，例如kws_reset_strategy_run01，設定px_variants為{aggressive}即可先跑一版。需重新synthesis，不能開啟舊routed.dcp作post-route來測新RTL。核對新的CDC-7/10、LUTAR-1、setup/hold、reset例外範圍；不能預先承諾警告全消失或125MHz繼續通過。

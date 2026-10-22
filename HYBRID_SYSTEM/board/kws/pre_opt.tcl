@@ -23,7 +23,7 @@ if {[llength $reset_pins]} {set_false_path -to $reset_pins}
 set lock_meta [kws_require [get_cells -quiet -hier -regexp {.*clocks/lock_sync_reg\[0\]}] lock_meta]
 set_false_path -to [get_pins -of_objects $lock_meta -filter {REF_PIN_NAME == D}]
 # Board reset release is a stable level crossing into a four-stage synchronizer.
-# Exempt ONLY its source Q -> CIM stage-zero D; all later stages and the
+# Exempt ONLY its source register C -> CIM stage-zero D; all later stages and the
 # system-clock reset chain remain timed. Fail closed on renamed/replicated cells.
 proc kws_exactly_one {objects label} {
     if {[llength $objects] != 1} {
@@ -43,6 +43,7 @@ if {!$reset_async_value} {
     error "KWS CIM reset stage zero must retain ASYNC_REG=true; actual=<$reset_async_value>"
 }
 set reset_release_q [kws_exactly_one [get_pins -quiet -of_objects $reset_release_src -filter {REF_PIN_NAME == Q}] reset_release_Q]
+set reset_release_c [kws_exactly_one [get_pins -quiet -of_objects $reset_release_src -filter {REF_PIN_NAME == C}] reset_release_C]
 set reset_release_d [kws_exactly_one [get_pins -quiet -of_objects $reset_release_dst -filter {REF_PIN_NAME == D}] reset_release_D]
 # Vivado 2023.2 returns the launching register C pin as a timing startpoint.
 # Check Q in the full combinational fan-in instead, not startpoints_only.
@@ -51,6 +52,8 @@ puts "KWS RESET CDC: fanin=[get_property NAME $reset_release_fanin]"
 if {[lsearch -exact [get_property NAME $reset_release_fanin] [get_property NAME $reset_release_q]] < 0} {
     error "KWS reset release Q is not in the fan-in of CIM stage-zero D"
 }
-set_false_path -from $reset_release_q -to $reset_release_d
-puts "KWS RESET CDC: from=[get_property NAME $reset_release_q] to=[get_property NAME $reset_release_d]; source=1 destination=1; stage1..3 remain timed"
+# Q proves connectivity; the launching sequential clock pin C is the valid
+# Vivado set_false_path startpoint. This is not the entire source clock object.
+set_false_path -from $reset_release_c -to $reset_release_d
+puts "KWS RESET CDC: from=[get_property NAME $reset_release_c] to=[get_property NAME $reset_release_d]; source=1 destination=1; stage1..3 remain timed"
 puts "KWS CDC constraints applied: command regs=[llength $cmd], response regs=[llength $rsp]. Review report_cdc and exceptions."
