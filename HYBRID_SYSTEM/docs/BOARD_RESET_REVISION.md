@@ -65,4 +65,9 @@ hook 檢查來源與目的 cell、Q/D pin 各恰好一個、目的 ASYNC_REG=TRU
 這是 Tcl mock，不是 Windows Vivado 實際網表驗證。實際命中需執行新 implementation 後查閱 log 與 exceptions.rpt。
 請使用新目錄 `kws_reset_cdc_strategy_run01` 重跑 baseline/aggressive；不能假定其餘 -2ns 域內違規會隨之消失。
 
+後續修正：原 hook 僅比較字串 TRUE，可能拒絕 Vivado 回傳的布林 1。
+現改成嚴格 Tcl boolean 判斷，接受 TRUE/1 等合法真值，拒絕 FALSE/0、空值與非法字串，並印出實際屬性值。
+九項 mock 通過（含兩種真值與四種屬性失敗情況）；使用者提供的舊 log 沒有屬性實值，因此尚不能斷言實際一定是 1。
+若新 hook 顯示 0/FALSE，必須檢查合成網表與 RTL 屬性，不可直接刪除保護或強制設定。
+
 使用現有四策略腳本及全新目錄，例如kws_reset_strategy_run01，設定px_variants為{aggressive}即可先跑一版。需重新synthesis，不能開啟舊routed.dcp作post-route來測新RTL。核對新的CDC-7/10、LUTAR-1、setup/hold、reset例外範圍；不能預先承諾警告全消失或125MHz繼續通過。

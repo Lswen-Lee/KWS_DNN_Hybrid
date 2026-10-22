@@ -33,8 +33,14 @@ proc kws_exactly_one {objects label} {
 }
 set reset_release_src [kws_exactly_one [get_cells -quiet -hier -regexp {(^|.*/)clocks/release_ready_reg$}] reset_release_source]
 set reset_release_dst [kws_exactly_one [get_cells -quiet -hier -regexp {(^|.*/)clocks/cim_reset_sync_reg\[0\]$}] reset_release_stage_zero]
-if {![string equal -nocase [get_property ASYNC_REG $reset_release_dst] TRUE]} {
-    error "KWS CIM reset stage zero must retain ASYNC_REG=TRUE"
+set reset_async_value [get_property ASYNC_REG $reset_release_dst]
+puts "KWS RESET CDC: cell=$reset_release_dst ASYNC_REG=<$reset_async_value>"
+# Vivado boolean properties may be returned as 1/0 rather than TRUE/FALSE.
+if {![string is boolean -strict $reset_async_value]} {
+    error "KWS CIM reset stage zero has invalid ASYNC_REG=<$reset_async_value>"
+}
+if {!$reset_async_value} {
+    error "KWS CIM reset stage zero must retain ASYNC_REG=true; actual=<$reset_async_value>"
 }
 set reset_release_q [kws_exactly_one [get_pins -quiet -of_objects $reset_release_src -filter {REF_PIN_NAME == Q}] reset_release_Q]
 set reset_release_d [kws_exactly_one [get_pins -quiet -of_objects $reset_release_dst -filter {REF_PIN_NAME == D}] reset_release_D]

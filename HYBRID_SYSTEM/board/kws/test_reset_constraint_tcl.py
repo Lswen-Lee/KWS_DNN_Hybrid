@@ -28,7 +28,16 @@ proc get_pins {args} {
     return pin
 }
 proc get_property {prop obj} {
-    if {$prop eq "ASYNC_REG"} {return [expr {$::case eq "no_async" ? "FALSE" : "TRUE"}]}
+    if {$prop eq "ASYNC_REG"} {
+        switch $::case {
+            numeric_true {return 1}
+            numeric_false {return 0}
+            empty_async {return {}}
+            invalid_async {return invalid}
+            no_async {return FALSE}
+            default {return TRUE}
+        }
+    }
     return $obj
 }
 proc all_fanin {args} {
@@ -38,13 +47,14 @@ proc all_fanin {args} {
 proc set_false_path {args} {lappend ::exceptions $args}
 proc set_max_delay {args} {}
 '''
-for case in ("normal", "missing", "duplicate", "no_async", "disconnected"):
+for case in ("normal", "numeric_true", "missing", "duplicate", "no_async",
+             "numeric_false", "empty_async", "invalid_async", "disconnected"):
     interp = lib.Tcl_CreateInterp()
     try:
         code = mock + f'\nset case {case}\nset exceptions {{}}\nsource {{{script}}}\n'
         rc = lib.Tcl_Eval(interp, code.encode())
         message = lib.Tcl_GetStringResult(interp).decode()
-        if case == "normal":
+        if case in ("normal", "numeric_true"):
             assert rc == 0, message
             check = r'''
 if {[lindex $exceptions end] ne {-from clocks/release_ready_reg/Q -to {clocks/cim_reset_sync_reg[0]/D}}} {
