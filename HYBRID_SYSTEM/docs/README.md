@@ -1,6 +1,6 @@
 # HYBRID_SYSTEM 文件入口
 
-整理完成：2026-10-20（接續2026-10-19的整理）。**先看現行基準，再看元件規格；歷史階段的「未完成」不是目前狀態，舊PASS也不代表新RTL已重測。**
+進度入口更新：2026-10-22。**目前狀態與下一步統一以[架構基準頁首](SINGLE_BUFFER_ARCHITECTURE.md)為準；歷史階段的「未完成」不是目前狀態，舊PASS也不代表新RTL已重測。**
 
 ## 建議閱讀順序
 
@@ -9,7 +9,7 @@
 3. [完整推論排程](S5D1_FULL_INFERENCE.md) → [分類整合](S5D2_ARGMAX.md) → [板級整合](S6_BOARD_INTEGRATION.md)。
 4. [時序與合成統一入口](TIMING_AND_SYNTHESIS_GUIDE.md)：最新PoT輸出FF、過去實驗、Tcl與結果解讀。
 
-目前RTL已有PoT輸出暫存級（c1ca412），2026-10-20再加入POST=1的scale查表輸入暫存級；順序檢查預設保留。最新版本全鏈及實體時序仍待驗證，操作以時序統一指南為準。Backend候選加總暫存級只有討論，**尚未實作**。
+目前已完成 FULL 與 Argmax、共享 PoT 輸入／輸出暫存及板級 reset 修正；2026-10-22 aggressive 在125／53MHz下 routed setup/hold 通過（各+0.014ns）。Routed資源為27,041 LUT、21,749 FF、18 BRAM Tile、10 DSP。功能模擬證據依版本區分，不宣稱新版reset後重跑全部全鏈；新版完整系統板測與完整CDC/reset審核仍待完成。下一步為新版基準封存、必要複驗及板測，不是重新實作S5-C。Backend候選加總暫存級只有討論，**尚未實作**。
 
 ## 按用途找文件
 
@@ -36,7 +36,7 @@
 | 最新PoT改動待全鏈複驗 | [PoT輸出級：驗證與Claude交接](POT_OUTPUT_REGISTER.md) |
 | 歷史階段任務 | [八份交接合輯與原檔對照](archive/LEGACY_REVIEW_HANDOFFS.md) |
 
-## 本次整理規則
+## 歷史整理規則（2026-10-19～20）
 
 - 原八份S5B/C/D、共享PoT審查及S5C提案合併至archive，保留全部正文與版本證據，刪除原根目錄副本並更新Markdown連結。
 - 沒有刪除獨有設計、公式或測試結果，也沒有重跑RTL測試或變更實作。
@@ -44,6 +44,6 @@
 - 新功能應更新對應規格與本入口，不再為每次對話另開一份重複總覽。歷史結果需標示版本；不能將計畫、局部PASS、全鏈PASS與STA混為一談。
 - 專案外層入口：[HYBRID_SYSTEM README](../README.md)、[資料夾規劃](../../HYBRID_PROJECT_DIRECTORY_STRUCTURE.md)。
 
-### 整理驗收
+### 歷史整理驗收（非目前文件數量）
 
 原根目錄41份Markdown，整理後根目錄34份，加archive合輯共35份。八份舊文件逐份比對HEAD原文，除連結目標重定位外正文一致。已檢查133個相對Markdown連結及合輯review錨點，沒有缺失目標（程式碼區塊不當作連結）。本次只整理文件，沒有重跑RTL／Vivado，也未改寫使用者原有三份文件。

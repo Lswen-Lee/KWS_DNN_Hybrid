@@ -2,6 +2,42 @@
 
 基準版本：v1.0（2026-10-03）
 
+## 目前狀態與下一步（2026-10-22，唯一現行進度入口）
+
+**S1～S5 的完整混合推論與 Argmax 已實作並有功能模擬證據；S6 板級版本已完成 routed timing 驗證。現在不是等待實作 S5-C。** 下方日期條目保留當時狀態，不可將其中「下一步／未開始／尚未驗證」直接當成今天的待辦；各次 PASS 也只屬於對應版本與測試範圍。
+
+| 階段 | 現行實作／驗證狀態 |
+|---|---|
+| S1／S2 | 單一 32 KiB activation buffer、Reader／Writer、MaxPool 搬移完成；功能及軟體 golden 測試已有紀錄 |
+| S3／S4 | PE 的 Conv1／FC1／FC2、權重與跨層排程完成；不再限於早期 FRONTEND／FC_TAIL |
+| S5-A／B／C | DCIM backend、CDC、master／chip、Conv2／Conv3 整層及共享 Reader／Writer／PoT 完成；已有單元、整層與切換測試 |
+| S5-D | FULL 九操作與 Argmax 完成；樣本 6988 的功能模擬分類 index=6、score=183；reset／錯誤及雙完成測試有歷史版本證據，不等於全資料集準確率驗證 |
+| S6 | 板級 ROM 自我測試、125／53 MHz 時脈與 reset 完成；新版 aggressive 的 routed setup／hold／脈寬均通過目前約束；新版完整系統板測尚無完成證據 |
+
+現行架構仍為單一 activation buffer、Conv1／FC1／FC2 使用 PE、Conv2／Conv3 使用 DCIM、唯一共用 PoT、逐操作排程。Writer 管線、PoT 輸入及輸出暫存已實作，順序檢查開啟；A/B buffer、跨層並行、backend 候選加總暫存級均未採用。CIM 內部 reset 未隨板級 reset 一起修改。
+
+### 最新實體證據與限制
+
+- run：`build/kws_reset_cdc_20261022_114453/kws_board.runs/impl_aggressive`，125／53 MHz，PIPE=1、POST=1、CHECK_RESULT_ORDER=1。
+- `kws_board_top_timing_summary_routed.rpt`：WNS=+0.014ns、WHS=+0.014ns，setup／hold／pulse-width 違規均 0；裕量小，不保證後續改動仍通過。
+- `build/kws_reset_cdc_20261022_114453/reports/reset_cdc_fixed/aggressive/utilization_routed.rpt`：LUT 27,041、FF 21,749、BRAM Tile 18、DSP 10；階層報告確認 activation buffer 為 8 RAMB36、PE 權重為 12 RAMB18。
+- 舊 `reports/summary.csv` 保留失敗呼叫紀錄，手動重跑沒有刷新；此次以 run 內 routed timing 和新匯出的 routed utilization 為準。
+- 舊通過版已封存於 `build/baselines/kws_125m_53m_pass_20261021`；**新版尚待相同封存**，不可用舊 DCP 代表新版 reset。
+- reset／CDC 警告與既有 CLR/PRE 例外仍待審核；STA 通過不等於 CDC 安全性、全回歸或板測全部通過。板級 reset 修改後只有獨立 reset TB/lint 與此次 STA 證據，不宣稱全鏈重新回歸。
+
+### 真正的下一步
+
+1. 保存新版通過的 DCP、來源版本、約束與完整報告，與舊基準並存。
+2. 補齊／審核 CDC、exceptions、reset 相關報告，完成必要的新版本功能複驗。
+3. 產生 bitstream 並驗證完整推論、分類結果、重複執行與 reset 恢復。
+4. 基準穩定後量測每層／全段 cycles、權重載入與計算時間、吞吐量及更多樣本一致性。
+
+閱讀優先序：**本節現況 → 最新元件專用規格 → 下方階段歷史**。不從較早日期的「本條優先／最新狀態」覆蓋本節。後續更新現況集中修改本節，歷史條目只追加，不再新增互相競爭的「最新進度」。
+
+## 歷史變更摘錄（2026-10-17～22；以下為當時狀態）
+
+> 本區「未測／下一步」均描述該次提交當下，不是現行待辦。Writer 的當前管線契約仍以專用規格為準。
+
 2026-10-22：僅修改板級kws_clock_reset，加入startup reset同步/延長級、release_count改同步清除、release_ready改走兩域四級同步器資料端；CIM內部reset與約束不改。獨立reset TB通過（含短脈波、失鎖、停CIM clock），全鏈與新STA待驗證；詳[BOARD_RESET_REVISION](BOARD_RESET_REVISION.md)。舊通過DCP仍保存，但不代表新RTL時序通過。
 
 時序通過基準已選定為kws_postroute_run02/after，125/53MHz、WNS +0.040ns、WHS +0.070ns，setup/hold/pulse-width違反均0。保存到build/baselines/kws_125m_53m_pass_20261021；來源版本、現有dirty差異及約束一併本機封存，來源重建限制與剩餘CDC/reset風險見[TIMING_PASS_BASELINE](TIMING_PASS_BASELINE.md)。不代表已完成板測。
@@ -18,7 +54,7 @@
 
 本版單測POST=0/1各833筆通過，板級lint通過；首筆延遲多一拍、連續輸出II=1、容量與reset已檢查。完整測試範圍及Claude重跑命令見上述文件。
 
-## 現行閱讀規則（2026-10-19文件整理）
+### 歷史閱讀規則（2026-10-19文件整理）
 
 本檔保留階段歷史作為決策紀錄，不刪除舊驗證證據。**下方同日與較早的「尚未實作／僅規劃」不是現在的待辦清單。** 現行閱讀入口見[README](README.md)，合成操作見[統一指南](TIMING_AND_SYNTHESIS_GUIDE.md)。
 
@@ -37,11 +73,11 @@
 
 2026-10-19使用者要求先不改RTL，新增正常板級實體最佳化實驗Tcl：同一合成網表比較baseline/fanout，可選Explore；保持125/53MHz及原約束，不覆寫舊報告。PoT output FF與總容量8筆的握手契約僅規劃未實作。詳[實體實驗及PoT輸出規劃](PHYSICAL_EXPERIMENT_AND_POT_OUTPUT_PLAN.md)。Vivado尚未執行，不宣稱收斂或reset/CDC已解決。
 
-## Writer時序修正（2026-10-19，優先於歷史Writer描述）
+### Writer時序修正紀錄（2026-10-19，取代初版Writer描述）
 
 使用者核准針對整合routed最差owner→Writer路徑（WNS -3.744ns）實作五級Writer：S0接收、S1乘法、S2部分和、S3地址、S4檢查/pending；E0輸入→E5 RAM commit→最後commit下一拍done。保留四狀態及ports；非法筆和較晚在途交易取消，較早commit保留。accepted_count改為所有握手交易數，不再只算合法筆。單一RAM、共用PoT、上層controller及reset/CDC不改。新增管線TB與獨立PERF量測；功能/完整回歸交Claude執行，尚未測。見[Writer規格](FEATURE_MAP_WRITER_PIPELINE.md)及[驗證任務](WRITER_PIPELINE_CLAUDE_REVIEW_PROMPT.md)。
 
-## S6 最新進度（2026-10-18，優先於下方歷史狀態）
+### S6 初次實作紀錄（2026-10-18；不是現行驗證狀態）
 
 使用者提供Claude報告：S5-D2正常FULL、定向reset/錯誤及雙完成突變已有功能模擬證據；尚無實體驗證。依使用者授權建立固定sample6988的板級整合，保留既有單一RAM、共用PoT、PE/DCIM與CDC，不修改推論RTL。新增來源ROM/供應FSM、測試supervisor、board core/top、125/53MHz clock/reset、XDC與正常非OOC匯入流程。詳見[S6架構](S6_BOARD_INTEGRATION.md)。
 
@@ -79,13 +115,17 @@
 | MaxPool | 先沿用現有 `maxpool2x2_uint8.sv`；不在本里程碑自行改 BRAM 或改成四值比較器 |
 | 第一個里程碑 | 交錯 channel 資料寫成 CHW → RAM 讀取 → 真正 MaxPool → 另一區域寫回 → 全結果比對 |
 | 後續順序 | 先記憶體與後處理，再真實 PE，再 DCIM backend，再完整混合推論 |
-| 最終計算分配方向 | Conv1／FC1／FC2 使用 PE；Conv2／Conv3 使用 DCIM；S5-A/B單patch及雙時脈功能通過，整層整合與實體CDC尚待完成 |
+| 最終計算分配方向 | Conv1／FC1／FC2 使用 PE；Conv2／Conv3 使用 DCIM；已接入 FULL 與共用後處理，驗證範圍見頁首現況 |
 | A/B buffer | 完成單一 buffer 基準並量測後才另行評估，不在此版偷偷加入 |
 
 「單一 buffer」與「同一位址原地覆寫」不同。本版不依賴特殊原地池化／卷積排程。
 Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列。兩者不得混稱或因名稱相似而刪除。
 
 ## 2. 已有模組及重用邊界
+
+### 整合演進歷史（以下日期條目不代表目前待辦）
+
+> 早期「FULL仍拒絕／Argmax待整合／未接共享top」已由 S5-D 完成所取代；下表重用邊界與頁首現況才是目前架構。
 
 2026-10-17測試補強：Claude回報3f78310的S5-D2功能驗證通過、無RTL錯誤，class=6/score=183。此次只改TB/Makefile/文件，正式加入雙完成脈波延後、分類/DCIM計算reset、分類source/read error與恢復，以及DCIM_WEIGHT log識別；不修改RTL或架構。新增測試尚待Claude驗收，不能沿用原PASS。詳[S5D2測試覆蓋](S5D2_TEST_COVERAGE.md)。
 
@@ -98,6 +138,8 @@ Activation buffer 保存層間 feature map；MaxPool line buffer 保存上一列
 2026-10-16共用後處理前置審查F1～F3已修正：保留排空gate並將運算階段外多餘PE結果轉FAULT；正式TB補NEXT_PATCH／DRAIN_LAYER異常、raw done當拍排空檢查與external Golden負測；Makefile三處改grep、log標識POST與Host讀回反壓。`test-pe-external-post`四配置、`test-s4-software`兩pipeline×兩seed及S4／PE controller lint全部通過。此項尚未接入DCIM共享PoT；完整結果與限制見SHARED_POSTPROCESS_STEP1.md。
 
 2026-10-15使用者明確授權共用後處理第一步，取代下列早期PE封裝限制：共享path改為`pe_memory_engine(INPUT_ZERO_POINT=128)`加外置`pot_result_stream`；PE控制器分開追蹤raw完成與量化排空。原`pe_pot_engine`保留獨立用途。此步尚未將DCIM接進共享PoT，FULL仍拒絕。規格／驗證見[第一步設計](SHARED_POSTPROCESS_STEP1.md)，獨立審查見[Claude prompt](archive/LEGACY_REVIEW_HANDOFFS.md#review-7)。不包含其他延後最佳化項目。
+
+### 現行重用邊界
 
 | 既有檔案 | 重用方式／限制 |
 |---|---|
@@ -143,7 +185,7 @@ flowchart TB
 
 ### 模型與初始位址規劃
 
-依目前模型尺寸。此表已實作為S4固定descriptor；若實際checkpoint／shape不同，需先核對更新。包含DCIM descriptor不代表DCIM backend已實作。
+依目前模型尺寸。此表已實作為固定descriptor並接入 FULL；若實際checkpoint／shape不同，需先核對更新。
 
 | 操作 | 來源base／筆數 | 目的base／筆數 |
 |---|---|---|
@@ -161,7 +203,7 @@ flowchart TB
 
 ## 4. 分階段檔案與驗收清單
 
-以下所有新檔案都相對於 `HYBRID_SYSTEM/`。狀態統一為：**未開始／實作中／模擬通過／Vivado通過／板測通過**，不得混用。
+以下檔案都相對於 `HYBRID_SYSTEM/`。本節是**分階段建立時的驗收紀錄**，表格狀態限定於該階段；今日總進度見頁首。早期 FULL 拒絕、未接共享top 等限制不是現行 RTL 規格。狀態統一為：**未開始／實作中／模擬通過／Vivado通過／板測通過**，不得混用。
 
 ### S1：記憶體、資料排列與讀取（第一批）
 
@@ -227,7 +269,7 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 | S5-B功能模擬通過 | `tb/integration/tb_kws_dcim_subsystem.sv` | 四組clock/phase、實際pin寫入、raw與INT32結果、reset/fault恢復；實體CDC尚未驗證 |
 | S5-C第一批協定模擬通過 | `rtl/control/dcim_layer_controller.sv` | 固定108×12、可配置W/H、八狀態整層排程；尚未接共享top |
 | S5-C第一批協定模擬通過 | `tb/control/tb_dcim_layer_controller.sv` | 受控端點、完整Conv2/3幾何、反壓/reset/fault；非真實整層算術驗收 |
-| 未開始 | `tb/integration/tb_kws_inference_top.sv` | 全層記憶體結果及最後分類比對 |
+| 後續S5-D已完成 | `tb/integration/tb_kws_inference_top.sv` | 全層記憶體及分類比對；不再是未開始，驗證範圍見頁首與S5D2文件 |
 
 2026-10-13使用者確認後實作S5-A：每層1296有效bytes加240 padding，row=k、pair=filter、Wu=Ws+128；group優先，每組32-byte activation重用於12個pair命令，最後12+20 padding=128。保存48份ΣWu與12份INT32跨group部分和；不變更chip/master。九個FSM狀態合併INIT/NEXT/DONE，保留registered修正器。make test-dcim-backend/lint-dcim-backend為專用入口。細節與實測見[S5-A](S5A_DCIM_BACKEND.md)。這是本次明確授權的新backend流程，不套用既有模組的延後最佳化清單。
 
@@ -251,7 +293,7 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 | 驗證通過 | `scripts/test_activation_path_vectors.py` | 匯出檔格式/metadata/signedness及錯誤資料拒絕，原檔不修改 |
 | 規劃已記錄 | `docs/SINGLE_BUFFER_ARCHITECTURE.md`（本檔） | 唯一的本子系統架構基準、決定與進度 |
 | S4已更新 | `Makefile` | S1/S2/S3/S4 test/lint及真實資料專用入口；保留既有測試 |
-| 未開始 | `vivado/create_activation_path_project.tcl`（新增） | S2後建立統一匯入／資源／時序驗證流程；具體top與板級wrapper先規劃再實作 |
+| 舊提案已取代，不是待辦 | `vivado/create_activation_path_project.tcl`（原擬檔名） | 現用 `board/kws/create_project.tcl` 與 `run_physical_experiment.tcl`；不需再建立另一套流程 |
 
 ## 5. 介面語義：已定方向與仍待細化
 
@@ -267,15 +309,15 @@ S4已採固定RUN_FRONTEND(0..2)、RUN_FC_TAIL(7..8)；FULL在開始搬資料前
 - FC2先把八筆量化結果存RAM，再以0～7類別順序讀入Argmax；比較共同輸出尺度。
 - reset清控制與valid，不全清activation RAM；reset後重新載入或標記哪些區域有效。
 
-### 必須在對應階段開始前明確決定
+### 已決定的介面與仍保留的選項
 
-| 項目 | 尚未決定的細節 |
+| 項目 | 目前決定／限制 |
 |---|---|
-| RAM模板 | S1已選 inferred BRAM，同步讀取一級，不增加第二級輸出FF；實際BRAM推導待Vivado確認 |
+| RAM模板 | inferred BRAM，同步讀取一級；最新 Routed 階層報告確認 activation buffer 為 8 RAMB36 |
 | 讀寫碰撞 | S1以模擬$fatal拒絕同地址同拍有效讀寫；合成不加入碰撞比較器，外部排程須保證不碰撞 |
 | 反壓 | Reader已採兩筆response buffer，reserved_count包含在途回應；固定一級同步RAM、最多一筆尚未入FIFO的回應 |
 | 命令協定 | cmd欄位精確位寬、接受時機、非法設定／abort行為 |
-| 系統時脈 | 不在本文件鎖死100／125／150MHz；整合後另驗證，不沿用獨立結果當保證 |
+| 系統時脈 | 目前板級系統125MHz／CIM53MHz已通過指定run的STA；不是最高頻率證明，不沿用其他獨立結果當保證 |
 | 主機介面 | 先用可驗證串流介面；AXI/UART/DMA與txt解析由後續系統介面規劃決定 |
 | MaxPool最佳化 | line buffer BRAM、四值比較器或保留原版，尚未選擇；不得在S1/S2順便改動 |
 | ASIC版本 | 與本FPGA基準分開規劃，不以BRAM直接等同ASIC SRAM |
@@ -311,6 +353,8 @@ stateDiagram-v2
 
 ## 8. 進度與變更紀錄
 
+> 以下保留早期測試與當時的工作順序；目前下一步只見頁首。舊 PASS 不自動延伸到新版本。
+
 | 日期 | 版本／階段 | 內容 | 驗證狀態 |
 |---|---|---|---|
 | 2026-10-03 | v1.0／規劃 | 記錄單buffer基準、分階段檔案、介面邊界、測試與未決事項 | 文件檢查；沒有新增RTL、TB或Vivado執行結果 |
@@ -319,7 +363,7 @@ stateDiagram-v2
 | 2026-10-04 | S1第三批 | activation_reader、真實RAM反壓/PATCH TB與Makefile | Verilator 5.030：15個成功命令、10個預期拒絕、34284請求/34281輸出（3筆reset刻意取消）、889次stall保持檢查；reader lint通過 |
 | 2026-10-04 | S2池化路徑 | Pool控制器、host/load/read/pool整合、元件控制指南 | 9個池化案例、11個非法命令、294912筆全RAM讀回、reset及FAULT恢復通過；整合lint及S1回歸/lint通過；Vivado/板測未執行 |
 
-下一步為 **S5-C：在已完成雙時脈功能模擬的DCIM subsystem外接整層Reader／PoT／Writer與控制器**，以真實Conv2/3軟體資料驗收。S4的PE／Pool區段自動排程功能模擬已完成；不增加Argmax前置，不直接開放FULL，也不宣稱完整CNN已完成。S5板級wrapper與Vivado／CDC實體驗證仍未執行。
+**歷史工作計畫（S5-C 實作前，已完成取代）**：當時下一步為 S5-C 的整層 Reader／PoT／Writer 與真實 Conv2/3 golden；當時尚未開放 FULL／Argmax 或完成板級流程。如今 S5-C、S5-D 及板級 routed timing 已完成，不能再依本條安排下一步。
 
 2026-10-05 S4：新增九筆descriptor ROM、跨層controller、部分inference top與三份TB；不改原PE／RAM／Pool RTL。ROM16地址檢查通過；協定單測2個成功區段／5操作／9個錯誤案例通過。真實軟體sample6988，RESULT_PIPELINED=0/1×seed505/128共4次，每次3區段／7操作／5次權重請求；每次98304筆讀回中96120筆已初始化資料比對通過。每筆運算write/read位址與數值／數量亦檢查；單筆golden破壞正確報錯，整合lint通過。FULL與DCIM未支援，FC分支仍由外部flatten開始。詳[S4指南](S4_LAYER_SEQUENCER.md)。
 
@@ -332,6 +376,8 @@ stateDiagram-v2
 2026-10-04 S2補強：以軟體 dataset_index=6988 的 quant_input→pool1、relu1/2/3→pool2/3/4 檔案直接作為輸入/golden。四組8568筆輸出與軟體完全一致，131072筆全RAM讀回通過；原測試與lint通過。操作、格式及限制見 [SOFTWARE_POOL_GOLDEN.md](SOFTWARE_POOL_GOLDEN.md)。僅增加TB模式與Makefile入口，不改RTL。同步修正先前誤把Argmax列為S3前置的文字。
 
 ## 9. S1 第一批實作：package 與 activation buffer
+
+> 歷史實作快照：本節至第12節的「後續／尚未驗證」皆限定初次實作時。保留原TB範圍；最新整合與BRAM結果見頁首。
 
 ### 本次檔案
 
@@ -405,6 +451,8 @@ Vivado綜合後檢查`report_utilization -hierarchical`與RAMB18E1/RAMB36E1實�
 參考：[AMD UG901 Simple Dual-Port Block RAM Examples](https://docs.amd.com/r/2022.2-English/ug901-vivado-synthesis/Simple-Dual-Port-Block-RAM-Examples)、[官方PYNQ-Z2 PS/DDR專案設定](https://github.com/Xilinx/PYNQ/blob/master/boards/Pynq-Z2/petalinux_bsp/hardware_project/pynqz2.tcl)。
 
 ## 10. S1 第二批：feature_map_writer
+
+> 歷史初版規格：本節一筆pending、accepted_count與done時序已被五級Writer管線版本取代。現行契約見 [FEATURE_MAP_WRITER_PIPELINE.md](FEATURE_MAP_WRITER_PIPELINE.md)，不可直接照本節舊cycle公式設計新接線。
 
 新增`rtl/control/feature_map_writer.sv`、`tb/control/tb_feature_map_writer.sv`，修改Makefile加入test/lint；沿用package與真正activation_buffer，不修改RAM、PE、CIM、MaxPool。這是本地BRAM寫入端，不是DDR/AXI master。
 
@@ -485,6 +533,8 @@ TB接真正activation_buffer。stimulus獨立計算期望地址／資料並排�
 實測結果：`PASS feature_map_writer commits=54946 read_checks=163840 success=6 error=10`；writer lint通過。原activation_buffer回歸維持108449次檢查通過，碰撞負向測試與lint通過。
 
 ## 11. S1 第三批：activation_reader（2026-10-04）
+
+> 歷史驗收範圍：當時尚未整合PE/DCIM的描述不代表目前狀態；目前已用於完整推論。
 
 ### 檔案與責任
 
@@ -570,6 +620,8 @@ BRAM推導、最高頻率、資源與板測未驗證。後續外層須管理來�
 實測：15個成功命令、10個預期拒絕、34284次RAM請求、34281筆輸出、889次停頓保持檢查。差額3筆為reset刻意取消，TB另外檢查此差額。持續ready案例檢查首筆後每拍一筆。原writer回歸54946次commit／163840筆讀回通過；RAM回歸108449次檢查與碰撞負向測試通過；三個模組lint通過。未重跑所有PE/CIM系統回歸。
 
 ## 12. S2 池化控制與整合（2026-10-04）
+
+> 歷史S2版本：當時top僅有Pool/Host，後續已加入PE/DCIM與分類所有權；本節不是現行top的完整FSM清單。
 
 詳細元件關係、狀態圖、介面、逐拍流程與波形路徑統整至[ACTIVATION_PATH_CONTROL_GUIDE.md](ACTIVATION_PATH_CONTROL_GUIDE.md)。本節保留基準決定，避免與閱讀指南的角色混淆。
 
