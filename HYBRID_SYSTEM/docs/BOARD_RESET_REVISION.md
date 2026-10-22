@@ -70,4 +70,9 @@ hook 檢查來源與目的 cell、Q/D pin 各恰好一個、目的 ASYNC_REG=TRU
 九項 mock 通過（含兩種真值與四種屬性失敗情況）；使用者提供的舊 log 沒有屬性實值，因此尚不能斷言實際一定是 1。
 若新 hook 顯示 0/FALSE，必須檢查合成網表與 RTL 屬性，不可直接刪除保護或強制設定。
 
+使用者後續實測 Vivado 2023.2：startpoints_only 回傳 release_ready_reg/C，完整 fan-in 則包含 Q 與 C。
+因此連接核對改用 `all_fanin -flat -to` 的完整 cone 檢查 Q，並印出 cone；不再把 Q 當成必須出現在 timing startpoint 清單的物件。
+例外仍僅為來源 Q 到第一級 D，沒有擴大到 clock 或後續同步級。mock 已依實測清單重現 C-only startpoint，九項測試通過；實際 implementation 待重新執行。
+RTL/synthesis 未變，可沿用成功的 synth_1，僅 reset_run impl_baseline/impl_aggressive 並重跑；此手動重跑不會自動刷新外層實驗腳本的 summary.csv。
+
 使用現有四策略腳本及全新目錄，例如kws_reset_strategy_run01，設定px_variants為{aggressive}即可先跑一版。需重新synthesis，不能開啟舊routed.dcp作post-route來測新RTL。核對新的CDC-7/10、LUTAR-1、setup/hold、reset例外範圍；不能預先承諾警告全消失或125MHz繼續通過。

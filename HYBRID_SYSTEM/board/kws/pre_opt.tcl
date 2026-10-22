@@ -44,9 +44,12 @@ if {!$reset_async_value} {
 }
 set reset_release_q [kws_exactly_one [get_pins -quiet -of_objects $reset_release_src -filter {REF_PIN_NAME == Q}] reset_release_Q]
 set reset_release_d [kws_exactly_one [get_pins -quiet -of_objects $reset_release_dst -filter {REF_PIN_NAME == D}] reset_release_D]
-set reset_release_fanin [all_fanin -flat -startpoints_only -to $reset_release_d]
+# Vivado 2023.2 returns the launching register C pin as a timing startpoint.
+# Check Q in the full combinational fan-in instead, not startpoints_only.
+set reset_release_fanin [all_fanin -flat -to $reset_release_d]
+puts "KWS RESET CDC: fanin=[get_property NAME $reset_release_fanin]"
 if {[lsearch -exact [get_property NAME $reset_release_fanin] [get_property NAME $reset_release_q]] < 0} {
-    error "KWS reset release Q is not a startpoint of CIM stage-zero D"
+    error "KWS reset release Q is not in the fan-in of CIM stage-zero D"
 }
 set_false_path -from $reset_release_q -to $reset_release_d
 puts "KWS RESET CDC: from=[get_property NAME $reset_release_q] to=[get_property NAME $reset_release_d]; source=1 destination=1; stage1..3 remain timed"

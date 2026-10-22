@@ -42,7 +42,8 @@ proc get_property {prop obj} {
 }
 proc all_fanin {args} {
     if {$::case eq "disconnected"} {return other/Q}
-    return clocks/release_ready_reg/Q
+    if {[lsearch -exact $args -startpoints_only] >= 0} {return clocks/release_ready_reg/C}
+    return {clocks/cim_reset_sync_reg[0]/D clocks/sys_reset_sync[0]_i_1/O clocks/sys_reset_sync[0]_i_1/I0 clocks/release_ready_reg/Q clocks/release_ready_reg/C}
 }
 proc set_false_path {args} {lappend ::exceptions $args}
 proc set_max_delay {args} {}
